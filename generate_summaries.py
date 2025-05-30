@@ -4,8 +4,18 @@ from time import sleep
 from transformers import pipeline
 from tqdm import tqdm
 import os
-
+import sys
 from prompts import DATASET_SYSTEM_PROMPTS
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("target", type=str)
+parser.add_argument("N", type=int, default=1000)
+parser.add_argument("--overwrite", action="store_true", default=False)
+args = parser.parse_args()
+
+TARGET = args.target
+N = args.N
 
 xsum_responses, xsum_articles, xsum_keys = load_data("xsum", sources = SOURCES)
 cnn_responses, cnn_articles, cnn_keys = load_data("cnn", sources = SOURCES)
@@ -116,19 +126,24 @@ for model in main_models:
     #         results[k] = v
     #     save_to_json(results, f"summaries/cnn/{model}_responses.json")
     #     continue
-    results = {}
-    for key in tqdm(xsum_keys[:N]):
-        results[key] = get_summary(xsum_articles[key], "xsum", model)[0]
-        # print(key)
-        # print(results[key])
-        save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
-
-    results = {}
-    for key in tqdm(cnn_keys[:N]):
-        results[key] = get_summary(cnn_articles[key], "cnn", model)[0]
-        # print(key)
-        # print(results[key])[0]
-        save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
+    if args.overwrite or f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json" not in os.listdir("summaries/xsum"):
+        results = {}
+        for key in tqdm(xsum_keys[:N]):
+            results[key] = get_summary(xsum_articles[key], "xsum", model)[0]
+            # print(key)
+            # print(results[key])
+            save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
+    else: 
+        print(f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json already exists")
+    if args.overwrite or f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json" not in os.listdir("summaries/cnn"):
+        results = {}
+        for key in tqdm(cnn_keys[:N]):
+            results[key] = get_summary(cnn_articles[key], "cnn", model)[0]
+            # print(key)
+            # print(results[key])[0]
+            save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
+    else: 
+        print(f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json already exists")
     print(model, "done!")
 
 print("Done!")

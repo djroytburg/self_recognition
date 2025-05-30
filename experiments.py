@@ -1,3 +1,4 @@
+import sys
 from tqdm import tqdm
 from data import load_data, SOURCES, TARGET, save_to_json, load_from_json, N
 from models import (
@@ -27,7 +28,7 @@ def generate_gpt_logprob_results(
     responses, articles, keys = load_data(dataset)
     results = []  # load_from_json(f"results/{model}_results.json")
 
-    for key in keys[starting_idx:]:
+    for key in tqdm(keys[starting_idx:], desc=f"[generate_gpt_logprob_results] on {model} for {dataset}"):
         article = articles[key]
 
         source_summary = responses[model][key]
@@ -282,20 +283,44 @@ def simplify_recognition_results(results):
     recog_data.index = keys
     return recog_data.mean(axis=0)
 
-def simplify_logprob_results(results):
-    raise NotImplementedError("Not implemented")
+def simplify_comparative_scores(results, model_name=TARGET):
+    detect = {}
+    prefer = {}
+    for result in results:
+        model = result['model']
+        if model not in detect:
+            detect[model] = []
+        if model not in prefer:
+            prefer[model] = []
+        
+        detect[model].append(result['detection_score'])
+        prefer[model].append(result['self_preference'])
+    detect_df, prefer_df = pd.DataFrame(detect), pd.DataFrame(prefer)
+    new_col_names = list(detect_df.columns)[:-1]
+    new_col_names.append(model_name)
+    detect_df.columns = new_col_names
+    prefer_df.columns = new_col_names
+    return detect_df.mean(axis=0), prefer_df.mean(axis=0)
+
+if sys.argv[-1] == "all" or sys.argv[-1] == TARGET:
+    sys.argv[-1] = "ind_score,ind_recog,compare"
 
 for model in [TARGET]:
     for dataset in ["cnn", "xsum"]:
-        results = generate_score_results(dataset, model, starting_idx=0)
-        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}.json")
-        simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
-        results = generate_recognition_results(dataset, model, starting_idx=0)
-        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}.json")
-        simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
-        # results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
-        # save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
-
+        if "ind_score" in sys.argv[-1]:
+            results = generate_score_results(dataset, model, starting_idx=0)
+            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}.json")
+            simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
+        if "ind_recog" in sys.argv[-1]:
+            results = generate_recognition_results(dataset, model, starting_idx=0)
+            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}.json")
+            simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
+        if "compare" in sys.argv[-1]:
+            results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
+            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
+            compare_detect, compare_prefer = simplify_comparative_scores(results)
+            compare_detect.to_csv(f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}_detect_simple.csv")
+            compare_prefer.to_csv(f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}_prefer_simple.csv")
     print(model)
 
 # model = "cnn_10_ft_gpt35"

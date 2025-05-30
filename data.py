@@ -6,7 +6,7 @@ import sys
 
 TARGET = sys.argv[1]
 print(TARGET)
-N = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+N = int(sys.argv[2]) if (len(sys.argv) > 2 and sys.argv[2].isdigit()) else 1000
 print(N)
 SOURCES = ["human", "claude", "gpt35", "gpt4", "llama"]
 
