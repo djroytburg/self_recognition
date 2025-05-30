@@ -321,4 +321,11 @@ def get_gpt_score(summary, article, model):
         logprobs=True,
         top_logprobs=5,
     )
-    return response.choices[0].logprobs.content[0].top_logprobs
+    try:
+        return response.choices[0].logprobs.content[0].top_logprobs
+    except:
+        print(response)
+        print(response.choices[0])
+        print(response.choice[0].logprobs)
+        print(response.choices[0].logprobs.content)
+        return response.choices[0].logprobs.content[0].top_logprobs

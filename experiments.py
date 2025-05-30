@@ -293,8 +293,8 @@ for model in [TARGET]:
         results = generate_recognition_results(dataset, model, starting_idx=0)
         save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}.json")
         simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
-        results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
-        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
+        # results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
+        # save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
 
     print(model)
 

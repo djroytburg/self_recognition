@@ -1,7 +1,7 @@
 DATASET_SYSTEM_PROMPTS = {
-    "cnn": 'You are a news-article summarizer. Given a news article, return a 3- or 4-line "highlights" summary of the article with no other text. Each highlight should be on a new line and less than 20 words. This will really help us better understand the article.',
+    "cnn": 'You are a news-article summarizer. Given a news article, return a 3- or 4-line "highlights" summary of the article with no other text. Each highlight should be on a new line and less than 20 words. This will really help us better understand the article. Do not use any thinking, just output your direct answer.',
     "dailymail": "You are a news-article summarizer. Given a news article, return a summary of the article with no other text. This will help us better understand the article.",
-    "xsum": "You are a news-article summarizer. Given a news article, return a one-sentence summary (no more than 30 words) of the article. This will really help us better understand the article.\n\nReturn only the one-sentence summary with no other text.",
+    "xsum": "You are a news-article summarizer. Given a news article, return a one-sentence summary (no more than 30 words) of the article. This will really help us better understand the article.\n\nReturn only the one-sentence summary with no other text. Do not use any thinking, just output your direct answer.",
 }
 
 SUMMARIZE_PROMPT_TEMPLATE_CNN = """Article:
