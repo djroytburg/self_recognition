@@ -1,4 +1,4 @@
-from data import load_data, save_to_json
+from data import load_data, save_to_json, TARGET, N, SOURCES
 from models import get_summary
 from time import sleep
 from transformers import pipeline
@@ -7,10 +7,10 @@ import os
 
 from prompts import DATASET_SYSTEM_PROMPTS
 
-xsum_responses, xsum_articles, xsum_keys = load_data("xsum")
-cnn_responses, cnn_articles, cnn_keys = load_data("cnn")
+xsum_responses, xsum_articles, xsum_keys = load_data("xsum", sources = SOURCES)
+cnn_responses, cnn_articles, cnn_keys = load_data("cnn", sources = SOURCES)
 
-main_models = ["llama3.1-8b-instruct"]
+main_models = [TARGET]
 xsum_models_gpt35 = [
     "xsum_2_ft_gpt35",
     "xsum_10_ft_gpt35",
@@ -79,52 +79,56 @@ def preprocess_summary_data(dataset_name, dataset, pipe):
 
 print("Starting...")
 for model in main_models:
-    
-    if "llama" in model.lower() and False:
-        results = {}
-        pipe = pipeline("text-generation", model=model, token=os.getenv("HF_TOKEN"), device_map="auto")
-        pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
-        pipe.model.config.pad_token_id = pipe.model.config.eos_token_id
+    # print(model)
+    # if "llama" in model.lower() and False:
+    #     results = {}
+    #     pipe = pipeline("text-generation", model=model, token=os.getenv("HF_TOKEN"), device_map="auto")
+    #     pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
+    #     pipe.model.config.pad_token_id = pipe.model.config.eos_token_id
 
-        xsum_pipe_data = preprocess_summary_data("xsum", [xsum_articles[k] for k in xsum_keys], pipe)
-        xsum_summaries = []
-        for output in pipe(xsum_pipe_data,
-                        max_new_tokens=100, # Set max_new_tokens for generation
-                        return_full_text=False # Return only the generated part
-                       ):
-            generated_text = output[0]["generated_text"]
-            print(generated_text)
-            xsum_summaries.append(generated_text) # Store the raw generated text
-        for k, v in zip(xsum_keys, xsum_summaries):
-            results[k] = v        
+    #     xsum_pipe_data = preprocess_summary_data("xsum", [xsum_articles[k] for k in xsum_keys], pipe)
+    #     xsum_summaries = []
+    #     for output in pipe(xsum_pipe_data,
+    #                     max_new_tokens=100, # Set max_new_tokens for generation
+    #                     return_full_text=False # Return only the generated part
+    #                    ):
+    #         generated_text = output[0]["generated_text"]
+    #         print(generated_text)
+    #         xsum_summaries.append(generated_text) # Store the raw generated text
+    #     for k, v in zip(xsum_keys, xsum_summaries):
+    #         results[k] = v        
 
-        save_to_json(results, f"summaries/xsum/{model}_responses.json")
-        results = {}
+    #     save_to_json(results, f"summaries/xsum/{model}_responses.json")
+    #     results = {}
         
 
-        cnn_pipe_data = preprocess_summary_data("cnn", [cnn_articles[k] for k in cnn_keys], pipe)
-        cnn_summaries = []
-        for output in pipe(cnn_pipe_data,
-                        max_new_tokens=100, # Set max_new_tokens for generation
-                        batch_size=8,      # Process in batches for efficiency
-                        return_full_text=False # Return only the generated part
-                       ):
-            generated_text = output[0]["generated_text"]
-            print(generated_text)
-            cnn_summaries.append(generated_text)
-        for k, v in zip(cnn_keys, cnn_summaries):
-            results[k] = v
-        save_to_json(results, f"summaries/cnn/{model}_responses.json")
-        continue
+    #     cnn_pipe_data = preprocess_summary_data("cnn", [cnn_articles[k] for k in cnn_keys], pipe)
+    #     cnn_summaries = []
+    #     for output in pipe(cnn_pipe_data,
+    #                     max_new_tokens=100, # Set max_new_tokens for generation
+    #                     batch_size=8,      # Process in batches for efficiency
+    #                     return_full_text=False # Return only the generated part
+    #                    ):
+    #         generated_text = output[0]["generated_text"]
+    #         print(generated_text)
+    #         cnn_summaries.append(generated_text)
+    #     for k, v in zip(cnn_keys, cnn_summaries):
+    #         results[k] = v
+    #     save_to_json(results, f"summaries/cnn/{model}_responses.json")
+    #     continue
     results = {}
-    for key in tqdm(xsum_keys):
+    for key in tqdm(xsum_keys[:N]):
         results[key] = get_summary(xsum_articles[key], "xsum", model)[0]
-        save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses.json")
+        # print(key)
+        # print(results[key])
+        save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
 
     results = {}
-    for key in tqdm(cnn_keys):
+    for key in tqdm(cnn_keys[:N]):
         results[key] = get_summary(cnn_articles[key], "cnn", model)[0]
-        save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses.json")
+        # print(key)
+        # print(results[key])[0]
+        save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
     print(model, "done!")
 
 print("Done!")

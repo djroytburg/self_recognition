@@ -1,15 +1,23 @@
 import json
 from datasets import load_dataset
 import os
+import sys
 
-SOURCES = ["human", "claude", "gpt35", "gpt4", "llama", "llama3.1-8b-instruct"]
 
+TARGET = sys.argv[1]
+print(TARGET)
+N = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+print(N)
+SOURCES = ["human", "claude", "gpt35", "gpt4", "llama"]
 
-def save_to_json(dictionary, file_name):
+def save_to_json(dictionary, file_name, force_overwrite=True):
     # Create directory if not present
     directory = os.path.dirname(file_name)
     if directory != "" and not os.path.exists(directory):
         os.makedirs(directory)
+
+    if not force_overwrite and os.path.exists(file_name):
+        return
 
     with open(file_name, "w") as f:
         json.dump(dictionary, f)
@@ -20,15 +28,18 @@ def load_from_json(file_name) -> dict:
         return json.load(f)
 
 
-def load_data(dataset):
+def load_data(dataset, sources = SOURCES + [TARGET]):
     responses = {}
-    for source in SOURCES:
+    for source in sources:
         responses[source] = load_from_json(
-            f"summaries/{dataset}/{dataset}_train_{source}_responses.json"
+            f"summaries/{dataset}/{dataset}_train_{source}_responses{'_' + str(N) if (N != 1000 and source == TARGET) else ''}.json"
         )
 
     articles = load_from_json(f"articles/{dataset}_train_articles.json")
-    keys = list(articles.keys())
+    if TARGET in sources:
+        keys = list(responses[TARGET].keys())
+    else:
+        keys = list(articles.keys())
     return responses, articles, keys
 
 

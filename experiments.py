@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from data import load_data, SOURCES, save_to_json, load_from_json
+from data import load_data, SOURCES, TARGET, save_to_json, load_from_json, N
 from models import (
     get_gpt_recognition_logprobs,
     get_model_choice,
@@ -9,7 +9,8 @@ from models import (
 from math import exp
 from pprint import pprint
 from random import shuffle
-
+import json
+import pandas as pd
 
 # Only suitable for GPT models
 def generate_gpt_logprob_results(
@@ -214,7 +215,7 @@ def generate_score_results(dataset, model, starting_idx=0):
 
     for key in tqdm(keys[starting_idx:]):
         article = articles[key]
-        for target_model in SOURCES:
+        for target_model in SOURCES + [TARGET]:
             summary = responses[target_model][key]
 
             response = get_gpt_score(summary, article, exact_model)
@@ -244,7 +245,7 @@ def generate_recognition_results(dataset, model, starting_idx=0):
 
     for key in tqdm(keys[starting_idx:]):
         article = articles[key]
-        for target_model in SOURCES:
+        for target_model in SOURCES + [TARGET]:
             summary = responses[target_model][key]
 
             res = get_gpt_recognition_logprobs(summary, article, exact_model)
@@ -266,16 +267,34 @@ def generate_recognition_results(dataset, model, starting_idx=0):
 
     return results
 
+def simplify_scores(results):
+    score = lambda x: [{a['target_model']: sum([int(k) * v for k, v in a['scores'].items()])} for a in results if a['key'] == x]
+    keys = list(set([a['key'] for a in results]))
+    return pd.DataFrame([[list(v.values())[0] for v in score(key)] for key in keys], columns = SOURCES + [TARGET], index=keys).mean(axis=0)
 
-for model in ["llama3.1-8b-instruct"]:
-    results = generate_score_results("cnn", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-    results = generate_score_results("xsum", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-    results = generate_recognition_results("cnn", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/xsum/{model}_recognition_results.json")
-    results = generate_recognition_results("xsum", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/xsum/{model}_recognition_results.json")
+def simplify_recognition_results(results):
+    keys = list(set([a['key'] for a in results]))
+    keyset = {}
+    for key in keys:
+        keyset[key] = [c['recognition_score'] for c in results if c['key'] == key]
+    recog_data = pd.DataFrame(keyset).T
+    recog_data.columns = SOURCES + [TARGET]
+    recog_data.index = keys
+    return recog_data.mean(axis=0)
+
+def simplify_logprob_results(results):
+    raise NotImplementedError("Not implemented")
+
+for model in [TARGET]:
+    for dataset in ["cnn", "xsum"]:
+        results = generate_score_results(dataset, model, starting_idx=0)
+        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}.json")
+        simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
+        results = generate_recognition_results(dataset, model, starting_idx=0)
+        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}.json")
+        simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
+        results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
+        save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
 
     print(model)
 

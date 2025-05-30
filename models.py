@@ -6,7 +6,7 @@ from pprint import pprint
 import json
 import os
 from llama_eval import get_llama_summary
-
+from data import TARGET
 
 from prompts import (
     DATASET_SYSTEM_PROMPTS,
@@ -46,6 +46,7 @@ GPT_MODEL_ID = {
     "llama3.1-70b-instruct-fp8": "llama3.1-70b-instruct-fp8",
     "llama-4-scout-17b-16e-instruct": "llama-4-scout-17b-16e-instruct",
     "llama3.1-8b-instruct":"llama3.1-8b-instruct",
+    TARGET: TARGET
 }
 
 load_dotenv()
@@ -225,7 +226,7 @@ def get_model_choice(
             model="gpt-4-1106-preview",
             return_logprobs=return_logprobs,
         )
-    if model.endswith("gpt35"):
+    else:
         return get_gpt_choice(
             summary1,
             summary2,
