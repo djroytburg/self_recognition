@@ -4,6 +4,9 @@ from openai import OpenAI
 import anthropic
 from pprint import pprint
 import json
+import os
+from llama_eval import get_llama_summary
+
 
 from prompts import (
     DATASET_SYSTEM_PROMPTS,
@@ -39,10 +42,22 @@ GPT_MODEL_ID = {
     "cnn_readability_ft_gpt35": "ft:gpt-3.5-turbo-1106:nyu-arg::8rbOOAw9",
     "cnn_length_ft_gpt35": "ft:gpt-3.5-turbo-1106:nyu-arg::8rbPCDli",
     "cnn_vowelcount_ft_gpt35": "ft:gpt-3.5-turbo-1106:nyu-arg::8raOJ2nT",
+    "llama3.3-70b-instruct-fp8": "llama3.3-70b-instruct-fp8",
+    "llama3.1-70b-instruct-fp8": "llama3.1-70b-instruct-fp8",
+    "llama-4-scout-17b-16e-instruct": "llama-4-scout-17b-16e-instruct",
+    "llama3.1-8b-instruct":"llama3.1-8b-instruct",
 }
 
 load_dotenv()
-openai_client = OpenAI()
+openai_api_key = os.getenv("LAMBDA_API_KEY")
+openai_api_base = "https://api.lambda.ai/v1"
+
+# Initialize the OpenAI client
+openai_client = OpenAI(
+    api_key=openai_api_key,
+    base_url=openai_api_base,
+    timeout=120
+)
 anthropic_client = anthropic.Anthropic()
 
 
@@ -60,11 +75,12 @@ def get_gpt_summary(article, dataset, model) -> str:
         messages=history,
         max_tokens=100,
         temperature=0,
+
     )
     return response.choices[0].message.content
 
 
-def get_summary(article, dataset, model):
+def get_summary(article, dataset, model, pipe=None):
     if model == "claude":
         return get_claude_summary(
             article,
@@ -78,6 +94,22 @@ def get_summary(article, dataset, model):
                 article,
                 dataset,
                 model=GPT_MODEL_ID[model],
+            ),
+        )
+    # elif "llama" in model.lower():
+    #     return (
+    #         get_llama_summary(
+    #             article,
+    #             dataset,
+    #             pipe,
+    #         )
+    #     )
+    else:
+        return (
+            get_gpt_summary(
+                article,
+                dataset,
+                model=model,
             ),
         )
 

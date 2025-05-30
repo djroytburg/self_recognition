@@ -2,7 +2,7 @@ import json
 from datasets import load_dataset
 import os
 
-SOURCES = ["human", "claude", "gpt35", "gpt4", "llama"]
+SOURCES = ["human", "claude", "gpt35", "gpt4", "llama", "llama3.1-8b-instruct"]
 
 
 def save_to_json(dictionary, file_name):
@@ -24,7 +24,7 @@ def load_data(dataset):
     responses = {}
     for source in SOURCES:
         responses[source] = load_from_json(
-            f"summaries/{dataset}_train_{source}_responses.json"
+            f"summaries/{dataset}/{dataset}_train_{source}_responses.json"
         )
 
     articles = load_from_json(f"articles/{dataset}_train_articles.json")

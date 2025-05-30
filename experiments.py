@@ -1,3 +1,4 @@
+from tqdm import tqdm
 from data import load_data, SOURCES, save_to_json, load_from_json
 from models import (
     get_gpt_recognition_logprobs,
@@ -211,7 +212,7 @@ def generate_score_results(dataset, model, starting_idx=0):
     responses, articles, keys = load_data(dataset)
     results = []
 
-    for key in keys[starting_idx:]:
+    for key in tqdm(keys[starting_idx:]):
         article = articles[key]
         for target_model in SOURCES:
             summary = responses[target_model][key]
@@ -241,7 +242,7 @@ def generate_recognition_results(dataset, model, starting_idx=0):
     responses, articles, keys = load_data(dataset)
     results = []
 
-    for key in keys[starting_idx:]:
+    for key in tqdm(keys[starting_idx:]):
         article = articles[key]
         for target_model in SOURCES:
             summary = responses[target_model][key]
@@ -266,25 +267,32 @@ def generate_recognition_results(dataset, model, starting_idx=0):
     return results
 
 
-for model in ["gpt4", "gpt35"]:
+for model in ["llama3.1-8b-instruct"]:
     results = generate_score_results("cnn", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
+    save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
+    results = generate_score_results("xsum", model, starting_idx=500)
+    save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
+    results = generate_recognition_results("cnn", model, starting_idx=500)
+    save_to_json(results, f"individual_setting/score_results/xsum/{model}_recognition_results.json")
+    results = generate_recognition_results("xsum", model, starting_idx=500)
+    save_to_json(results, f"individual_setting/score_results/xsum/{model}_recognition_results.json")
+
     print(model)
 
-model = "cnn_10_ft_gpt35"
-results = generate_score_results("cnn", model, starting_idx=10)
-save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-print("3/5")
+# model = "cnn_10_ft_gpt35"
+# results = generate_score_results("cnn", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
+# print("3/5")
 
-model = "xsum_10_ft_gpt35"
-results = generate_score_results("cnn", model, starting_idx=10)
-save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-print("4/5")
+# model = "xsum_10_ft_gpt35"
+# results = generate_score_results("cnn", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
+# print("4/5")
 
-model = "cnn_10_ft_gpt35"
-results = generate_score_results("xsum", model, starting_idx=10)
-save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-print("5/5")
+# model = "cnn_10_ft_gpt35"
+# results = generate_score_results("xsum", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
+# print("5/5")
 
 """
 print("Starting results_with_worse CNN Experiments!")

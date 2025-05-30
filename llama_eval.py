@@ -1,20 +1,21 @@
 import torch
 import json
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import torch.nn.functional as F
 import torch as t
 import argparse
 from dotenv import load_dotenv
 import os
 from tqdm import tqdm
+from prompts import *
 
 load_dotenv()
 
 HUGGINGFACE_TOKEN = os.getenv("HF_TOKEN")
-MODEL = "meta-llama/Llama-2-7b-chat-hf"
+MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 
 token = os.getenv("HF_TOKEN")
-llama_name = "meta-llama/Llama-2-7b-chat-hf"
+llama_name = MODEL
 
 COMPARISON_PROMPT_TEMPLATE = """<s>[INST] <<SYS>>
 You are a helpful assistant and expert in news-article summaries. You help compare summaries to help me with my records. You respond with only "1" or "2" and no other text.
@@ -42,6 +43,27 @@ def save_to_json(dictionary, file_name):
 def load_from_json(file_name) -> dict:
     with open(file_name, "r") as f:
         return json.load(f)
+
+def get_llama_summary(article, dataset,pipe) -> str:
+    messages = [
+        {"role": "system", "content": DATASET_SYSTEM_PROMPTS[dataset]},
+        {
+            "role": "user",
+            "content": f"Article:\n{article}\n\nProvide only the summary with no other text.",
+        },
+    ]
+    tokenizer = pipe.tokenizer
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+    response_text = pipe(messages)[0]["generated_text"][-1]['content']
+    print(response_text)
+    if formatted_prompt in response_text: # Check if the prompt is part of the output
+        assistant_response = response_text[len(formatted_prompt):].strip()
+    else: # Fallback if the model only returns its own part
+        assistant_response = response_text.strip()
+
+    return assistant_response
+
 
 
 def generate_logprobs(model, tokenizer, input_text, tokens):
@@ -269,19 +291,19 @@ if __name__ == "__main__":
     model = load_finetuned_model(model_weights)
     print(f"Loaded {model_weights}!")
 
-    # model = AutoModelForCausalLM.from_pretrained(
-    #     llama_name, token=token, load_in_8bit=True, device_map="auto"
-    # )
+    model = AutoModelForCausalLM.from_pretrained(
+        llama_name, token=token, load_in_8bit=True, device_map="auto"
+    )
 
-    # compute_choice_results(model, tokenizer, "xsum", args.file)
-    # compute_choice_results(model, tokenizer, "cnn", args.file)
-    # compute_individual_results(model, tokenizer, "xsum", args.file)
-    # compute_individual_results(model, tokenizer, "cnn", args.file)
-    # compute_label_results(model, tokenizer, "xsum", args.file)
-    # compute_label_results(model, tokenizer, "cnn", args.file)
+    compute_choice_results(model, tokenizer, "xsum", args.file)
+    compute_choice_results(model, tokenizer, "cnn", args.file)
+    compute_individual_results(model, tokenizer, "xsum", args.file)
+    compute_individual_results(model, tokenizer, "cnn", args.file)
+    compute_label_results(model, tokenizer, "xsum", args.file)
+    compute_label_results(model, tokenizer, "cnn", args.file)
 
-    # compute_summary_comparisons(model, tokenizer, 'xsum', args.file)
-    # compute_summary_comparisons(model, tokenizer, 'cnn', args.file)
+    compute_summary_comparisons(model, tokenizer, 'xsum', args.file)
+    compute_summary_comparisons(model, tokenizer, 'cnn', args.file)
 
     process_comparisons("xsum", args.file)
     process_comparisons("cnn", args.file)
