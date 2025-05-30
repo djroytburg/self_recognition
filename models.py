@@ -24,7 +24,7 @@ from prompts import (
 )
 
 GPT_MODEL_ID = {
-    "gpt4": "gpt-4o",
+    "gpt4": "gpt-4-1106-preview",
     "gpt35": "gpt-3.5-turbo-1106",
     "xsum_2_ft_gpt35": "ft:gpt-3.5-turbo-1106:nyu-arg::8nc8TgDp",
     "xsum_10_ft_gpt35": "ft:gpt-3.5-turbo-1106:nyu-arg::8nYmytb4",
@@ -312,7 +312,6 @@ def get_gpt_score(summary, article, model):
             "content": f"Article:\n{article}\n\nSummary:\n{summary}\n\nProvide only the score with no other text.",
         },
     ]
-    print(model)
     response = openai_client.chat.completions.create(
         model=GPT_MODEL_ID[model],
         messages=history,
