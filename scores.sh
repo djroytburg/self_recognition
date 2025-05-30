@@ -4,10 +4,7 @@ Here is the updated shell script that will execute the Python commands for each 
 
 # List of names to iterate through
 NAMES=(
-    "hermes3-70b"
-    "llama3.1-70b-instruct-fp8"
     "deepseek-r1-0528"
-    "llama-4-scout-17b-16e-instruct"
     "qwen3-32b-fp8"
     "lfm-40b"
     "hermes3-8b"
@@ -39,7 +36,18 @@ for NAME in "${NAMES[@]}"; do
         echo "Error: generate_summaries.py failed for $NAME. Skipping experiments.py."
         continue # Move to the next NAME if the first script fails
     fi
-    
+        
+    # Add all changes to the staging area
+    git add .
+
+    # Commit the changes with the specified message
+    git commit -m "results"
+
+    # Push the changes to the remote repository
+    git push
+
+    echo "--- Git operations completed ---"
+
     # Execute the second Python script
     echo "Executing: python3 experiments.py $NAME 350"
     python3 experiments.py "$NAME" 350
@@ -50,18 +58,19 @@ for NAME in "${NAMES[@]}"; do
         # Decide if you want to stop the entire script or continue
         # For now, we'll just log the error and continue to the next name.
     fi
+        
+    # Add all changes to the staging area
+    git add .
+
+    # Commit the changes with the specified message
+    git commit -m "results"
+
+    # Push the changes to the remote repository
+    git push
+
+    echo "--- Git operations completed ---"
+
     echo "" # Add a blank line for readability between runs
 done
 
 echo "--- All Python scripts finished. Now committing to Git ---"
-
-# Add all changes to the staging area
-git add .
-
-# Commit the changes with the specified message
-git commit -m "results"
-
-# Push the changes to the remote repository
-git push
-
-echo "--- Git operations completed ---"
