@@ -1,15 +1,16 @@
-Here is the updated shell script that will execute the Python commands for each name, and then commit all changes in the current directory to a GitHub repository with the message "results" and push them.
-
 #!/bin/bash
 
 # List of names to iterate through
 NAMES=(
+    "llama3.1-70b-instruct-fp8"
     #"deepseek-r1-0528" reasoning ahh
     #"qwen3-32b-fp8" reasoning ahh
     #"lfm-40b" no log probs, will think about how to patch
     #"hermes3-8b" already did
     # "llama3.2-3b-instruct"
     # "llama3.1-405b-instruct-fp8"
+    "deepseek-v3-0324"
+    "llama3.1-8b-instruct"
     "llama3.3-70b-instruct-fp8"
     "hermes3-405b"
     # "llama3.2-11b-vision-instruct"
@@ -17,8 +18,6 @@ NAMES=(
     # "llama-4-maverick-17b-128e-instruct-fp8"
     "deepseek-llama3.3-70b"
     #"deepseek-r1-671b" reasoning model
-    "llama3.1-8b-instruct"
-    "deepseek-v3-0324"
     # "llama3.1-nemotron-70b-instruct-fp8"
     #"lfm-7b" no log probs?
 )
