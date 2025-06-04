@@ -48,11 +48,12 @@ def simplify_compares(results, model_name_being_evaluated=None):
             correct_detection_counts[other_model] = 0
             self_preference_counts[other_model] = 0
             total_individual_comparisons[other_model] = 0
-        
+        if result.get("forward_detection") == result.get("backward_detection"):
+            continue
+        total_individual_comparisons[other_model] += 1
         detect_confidences[other_model].append(result['detection_score'])
         prefer_confidences[other_model].append(result['self_preference'])
         
-        total_individual_comparisons[other_model] += 1
         
         # Check for correct detection in the forward pass
         if result.get('forward_detection') == '1':
@@ -69,7 +70,7 @@ def simplify_compares(results, model_name_being_evaluated=None):
         
         if result.get('backward_comparison') == '2':
             self_preference_counts[other_model] += 1
-
+    
     mean_detect_confidence_data = {model: pd.Series(scores).mean() for model, scores in detect_confidences.items()}
     mean_prefer_confidence_data = {model: pd.Series(scores).mean() for model, scores in prefer_confidences.items()}
 
@@ -89,7 +90,7 @@ def simplify_compares(results, model_name_being_evaluated=None):
         total_prefs = total_individual_comparisons.get(model, 0) * 2
         self_preference_rate_data[model] = count / total_prefs if total_prefs > 0 else 0.0
     self_preference_rate = pd.Series(self_preference_rate_data, name="self_preference_rate")
-
+    print(mean_detect_confidence, mean_prefer_confidence, detection_accuracy, self_preference_rate)
     return mean_detect_confidence, mean_prefer_confidence, detection_accuracy, self_preference_rate
 
 # Main processing loop
