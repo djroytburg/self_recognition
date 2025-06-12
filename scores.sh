@@ -2,15 +2,15 @@
 
 # List of names to iterate through
 NAMES=(
-    "llama3.1-70b-instruct-fp8"
+    #"llama3.1-70b-instruct-fp8"
     #"deepseek-r1-0528" reasoning ahh
     #"qwen3-32b-fp8" reasoning ahh
     #"lfm-40b" no log probs, will think about how to patch
     #"hermes3-8b" already did
-    # "llama3.2-3b-instruct"
+    "llama3.2-3b-instruct"
     # "llama3.1-405b-instruct-fp8"
     "deepseek-v3-0324"
-    "llama3.1-8b-instruct"
+    #"llama3.1-8b-instruct"
     "llama3.3-70b-instruct-fp8"
     "hermes3-405b"
     # "llama3.2-11b-vision-instruct"
@@ -22,54 +22,48 @@ NAMES=(
     #"lfm-7b" no log probs?
 )
 
-# Iterate over each name in the array
+# First, generate summaries for all models
+echo "--- Generating summaries for all models ---"
 for NAME in "${NAMES[@]}"; do
-    echo "--- Running for NAME: $NAME ---"
+    echo "Checking/Generating summaries for: $NAME"
     
-    # Execute the first Python script
-    echo "Executing: python3 generate_summaries.py $NAME 350"
-    python3 generate_summaries.py "$NAME" 350
-    
-    # Check if the first script executed successfully
-    if [ $? -ne 0 ]; then
-        echo "Error: generate_summaries.py failed for $NAME. Skipping experiments.py."
-        continue # Move to the next NAME if the first script fails
-    fi
+    N_SUFFIX="_50" # Since N is 50
+    XSUM_FILE="summaries/xsum/xsum_train_${NAME}_responses${N_SUFFIX}.json"
+    CNN_FILE="summaries/cnn/cnn_train_${NAME}_responses${N_SUFFIX}.json"
+
+    # Check if summary files exist for both xsum and cnn
+    if [ ! -f "$XSUM_FILE" ] || [ ! -f "$CNN_FILE" ]; then
+        echo "Generating summaries for $NAME"
+        python3 generate_summaries.py "$NAME" -N 50
         
-    # Add all changes to the staging area
-    git add .
-
-    # Commit the changes with the specified message
-    git commit -m "results"
-
-    # Push the changes to the remote repository
-    git push
-
-    echo "--- Git operations completed ---"
-
-    # Execute the second Python script
-    echo "Executing: python3 experiments.py $NAME 350 compare"
-    python3 experiments.py "$NAME" 350 compare
-    
-    # Check if the second script executed successfully
-    if [ $? -ne 0 ]; then
-        echo "Error: experiments.py failed for $NAME."
-        # Decide if you want to stop the entire script or continue
-        # For now, we'll just log the error and continue to the next name.
+        if [ $? -ne 0 ]; then
+            echo "Error: generate_summaries.py failed for $NAME"
+            continue
+        fi
+    else
+        echo "Summaries already exist for $NAME, skipping"
     fi
-        
-    # Add all changes to the staging area
-    git add .
-
-    # Commit the changes with the specified message
-    git commit -m "results for $NAME"
-
-    # Push the changes to the remote repository
-    git push
-
-    echo "--- Git operations completed ---"
-
-    echo "" # Add a blank line for readability between runs
 done
 
-echo "--- All Python scripts finished. Now committing to Git ---"
+# Add all changes to git after all summaries are generated
+git add .
+git commit -m "Generated summaries for all models"
+git push
+
+# Now run experiments once with all models as SOURCES
+echo "--- Running experiments with all models ---"
+SOURCES=$(IFS=,; echo "${NAMES[*]}")
+echo "Executing: python3 experiments.py $SOURCES 50 compare"
+python3 experiments.py "$SOURCES" 50 compare
+
+if [ $? -ne 0 ]; then
+    echo "Error: experiments.py failed"
+    exit 1
+fi
+
+# Final git commit for experiment results
+git add .
+git commit -m "Experiment results for all models"
+git push
+
+echo "--- All operations completed ---"

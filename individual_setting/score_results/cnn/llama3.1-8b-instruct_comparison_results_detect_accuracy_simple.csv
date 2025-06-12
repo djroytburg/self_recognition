@@ -1,6 +1,6 @@
 ,detection_accuracy
-human,0.825
-claude,0.65
-gpt35,0.675
+human,.825
+claude,0.650
+gpt35,.675
 gpt4,0.35
 llama,0.625

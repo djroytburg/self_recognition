@@ -5,8 +5,9 @@ import anthropic
 from pprint import pprint
 import json
 import os
+
+import openai
 from llama_eval import get_llama_summary
-from data import TARGET
 
 from prompts import (
     DATASET_SYSTEM_PROMPTS,
@@ -45,8 +46,7 @@ GPT_MODEL_ID = {
     "llama3.3-70b-instruct-fp8": "llama3.3-70b-instruct-fp8",
     "llama3.1-70b-instruct-fp8": "llama3.1-70b-instruct-fp8",
     "llama-4-scout-17b-16e-instruct": "llama-4-scout-17b-16e-instruct",
-    "llama3.1-8b-instruct":"llama3.1-8b-instruct",
-    TARGET: TARGET
+    "llama3.1-8b-instruct":"llama3.1-8b-instruct"
 }
 
 load_dotenv()
@@ -57,12 +57,14 @@ openai_api_base = "https://api.lambda.ai/v1"
 openai_client = OpenAI(
     api_key=openai_api_key,
     base_url=openai_api_base,
-    timeout=120
+    timeout=120,
+    max_retries=10
 )
 anthropic_client = anthropic.Anthropic()
 
 
 def get_gpt_summary(article, dataset, model) -> str:
+    
     history = [
         {"role": "system", "content": DATASET_SYSTEM_PROMPTS[dataset]},
         {
@@ -192,139 +194,154 @@ def get_gpt_choice(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-
-    response = openai_client.chat.completions.create(
-        model=model,
-        messages=history,
-        max_tokens=10,
-        temperature=0,
-        logprobs=True,
-        top_logprobs=2,
-    )
-    if return_logprobs:
-        return response.choices[0].logprobs.content[0].top_logprobs
-    return response.choices[0].message.content
+    attempts = 0
+    while attempts < 10:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=history,
+                max_tokens=10,
+                temperature=0,
+                logprobs=True if return_logprobs else None,
+                top_logprobs=1 if return_logprobs else None,
+            )
+            if return_logprobs:
+                return response.choices[0].logprobs.content
+            else:
+                return response.choices[0].message.content
+        except openai.APITimeoutError:
+            attempts += 1
+            sleep(5)
+            print(f"Timeout error after {attempts} attempts, retrying...")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            sleep(5)
+            return "1"
+    print(f"Failed after {attempts} attempts.")
+    return "1"
 
 
 def get_model_choice(
     summary1, summary2, article, choice_type, model, return_logprobs=False
 ):
-    if model == "claude":
+    if "claude" in model:
         return get_claude_choice(
-            summary1,
-            summary2,
-            article,
-            choice_type,
-            return_logprobs=return_logprobs,
+            summary1, summary2, article, choice_type, model="claude-2.1"
         )
-    if model == "gpt4":
-        return get_gpt_choice(
-            summary1,
-            summary2,
-            article,
-            choice_type,
-            model="gpt-4-1106-preview",
-            return_logprobs=return_logprobs,
-        )
+    if model.startswith("gpt"):
+        return get_gpt_choice(summary1, summary2, article, choice_type, model=GPT_MODEL_ID[model], return_logprobs=return_logprobs)
     else:
-        return get_gpt_choice(
-            summary1,
-            summary2,
-            article,
-            choice_type,
-            model=GPT_MODEL_ID[model],
-            return_logprobs=return_logprobs,
-        )
+        return get_gpt_choice(summary1, summary2, article, choice_type, model=model, return_logprobs=return_logprobs)
 
 
 def get_gpt_choice_logprobs_with_sources(
     summary1, summary2, source1, source2, article, model
 ) -> dict:
     prompt = COMPARISON_PROMPT_TEMPLATE_WITH_SOURCES.format(
-        summary1=summary1,
-        summary2=summary2,
-        source1=source1,
-        source2=source2,
-        article=article,
+        summary1=summary1, summary2=summary2, source1=source1, source2=source2, article=article
     )
     system_prompt = COMPARISON_SYSTEM_PROMPT
+
     history = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
-
-    response = openai_client.chat.completions.create(
-        model=model,
-        messages=history,
-        max_tokens=1,
-        temperature=0,
-        logprobs=True,
-        top_logprobs=2,
-    )
-    return response.choices[0].logprobs.content[0].top_logprobs
+    attempts = 0
+    while attempts < 10:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=history,
+                max_tokens=10,
+                temperature=0,
+                logprobs=True,
+                top_logprobs=1,
+            )
+            return response.choices[0].logprobs.content
+        except openai.APITimeoutError:
+            attempts += 1
+            sleep(5)
+            print(f"Timeout error after {attempts} attempts, retrying...")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            sleep(5)
+            return "1"
+    print(f"Failed after {attempts} attempts.")
+    return "1"
 
 
 def get_logprobs_choice_with_sources(
     summary1, summary2, source1, source2, article, model
 ):
-    if model == "gpt4":
-        return get_gpt_choice_logprobs_with_sources(
-            summary1, summary2, source1, source2, article, "gpt-4-1106-preview"
+    if "claude" in model:
+        return get_claude_choice(
+            summary1, summary2, article, source1, source2
         )
-    if model.endswith("gpt35"):
-        return get_gpt_choice_logprobs_with_sources(
-            summary1,
-            summary2,
-            source1,
-            source2,
-            article,
-            GPT_MODEL_ID[model],
-        )
+    if model.startswith("gpt"):
+        return get_gpt_choice_logprobs_with_sources(summary1, summary2, source1, source2, article, model=GPT_MODEL_ID[model])
+    else:
+        return get_gpt_choice_logprobs_with_sources(summary1, summary2, source1, source2, article, model=model)
 
 
 def get_gpt_recognition_logprobs(summary, article, model) -> dict:
+    prompt = RECOGNITION_PROMPT_TEMPLATE.format(summary=summary, article=article)
+    system_prompt = RECOGNITION_SYSTEM_PROMPT
+
     history = [
-        {"role": "system", "content": RECOGNITION_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": RECOGNITION_PROMPT_TEMPLATE.format(
-                article=article, summary=summary
-            ),
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt},
     ]
 
-    response = openai_client.chat.completions.create(
-        model=GPT_MODEL_ID[model],
-        messages=history,
-        max_tokens=10,
-        temperature=0,
-        logprobs=True,
-        top_logprobs=2,
-    )
-    return response.choices[0].logprobs.content[0].top_logprobs
+    attempts = 0
+    while attempts < 10:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=history,
+                max_tokens=10,
+                temperature=0,
+                logprobs=True,
+                top_logprobs=1,
+            )
+            return response.choices[0].logprobs.content
+        except openai.APITimeoutError:
+            attempts += 1
+            sleep(5)
+            print(f"Timeout error after {attempts} attempts, retrying...")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            sleep(5)
+            return "No"
+    print(f"Failed after {attempts} attempts.")
+    return "No"
 
 
 def get_gpt_score(summary, article, model):
+    system_prompt = SCORING_SYSTEM_PROMPT
+
     history = [
-        {"role": "system", "content": SCORING_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": f"Article:\n{article}\n\nSummary:\n{summary}\n\nProvide only the score with no other text.",
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Summary:\n{summary}\n\nArticle:\n{article}"},
     ]
-    response = openai_client.chat.completions.create(
-        model=GPT_MODEL_ID[model],
-        messages=history,
-        max_tokens=1,
-        temperature=0,
-        logprobs=True,
-        top_logprobs=5,
-    )
-    try:
-        return response.choices[0].logprobs.content[0].top_logprobs
-    except:
-        print(response)
-        print(response.choices[0])
-        print(response.choice[0].logprobs)
-        print(response.choices[0].logprobs.content)
-        return response.choices[0].logprobs.content[0].top_logprobs
+    attempts = 0
+    while attempts < 10:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=history,
+                max_tokens=10,
+                temperature=0,
+                logprobs=True,
+                top_logprobs=5,
+            )
+            return response.choices[0].logprobs.content
+        except openai.APITimeoutError:
+            attempts += 1
+            sleep(5)
+            print(f"Timeout error after {attempts} attempts, retrying...")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            sleep(5)
+            return "1"
+    print(f"Failed after {attempts} attempts.")
+    return "1"

@@ -1,0 +1,6 @@
+,detection_accuracy
+human,0.96
+claude,0.781
+gpt35,0.863
+gpt4,0.496
+llama,0.803

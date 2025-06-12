@@ -4,12 +4,6 @@ import os
 import sys
 
 
-TARGET = sys.argv[1]
-print(TARGET)
-N = int(sys.argv[2]) if (len(sys.argv) > 2 and sys.argv[2].isdigit()) else 1000
-print(N)
-SOURCES = ["human", "claude", "gpt35", "gpt4", "llama"]
-
 def save_to_json(dictionary, file_name, force_overwrite=True):
     # Create directory if not present
     directory = os.path.dirname(file_name)
@@ -28,16 +22,16 @@ def load_from_json(file_name) -> dict:
         return json.load(f)
 
 
-def load_data(dataset, sources = SOURCES + [TARGET]):
+def load_data(dataset, sources, target_model, num_samples, extras=False):
     responses = {}
     for source in sources:
         responses[source] = load_from_json(
-            f"summaries/{dataset}/{dataset}_train_{source}_responses{'_' + str(N) if (N != 1000 and source == TARGET) else ''}.json"
+            f"summaries/{dataset}/{dataset}_train_{source}_responses{'_' + str(num_samples) if (num_samples != 1000 and source == target_model) else ''}{'_extra' if extras else ''}.json"
         )
 
-    articles = load_from_json(f"articles/{dataset}_train_articles.json")
-    if TARGET in sources:
-        keys = list(responses[TARGET].keys())
+    articles = load_from_json(f"articles/{dataset}_train_articles{'_extra' if extras else ''}.json")
+    if target_model in sources:
+        keys = list(responses[target_model].keys())
     else:
         keys = list(articles.keys())
     return responses, articles, keys

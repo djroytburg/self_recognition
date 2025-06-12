@@ -90,7 +90,6 @@ def simplify_compares(results, model_name_being_evaluated=None):
         total_prefs = total_individual_comparisons.get(model, 0) * 2
         self_preference_rate_data[model] = count / total_prefs if total_prefs > 0 else 0.0
     self_preference_rate = pd.Series(self_preference_rate_data, name="self_preference_rate")
-    print(mean_detect_confidence, mean_prefer_confidence, detection_accuracy, self_preference_rate)
     return mean_detect_confidence, mean_prefer_confidence, detection_accuracy, self_preference_rate
 
 # Main processing loop

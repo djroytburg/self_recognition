@@ -1,4 +1,4 @@
-from data import load_data, save_to_json, TARGET, N, SOURCES
+from data import load_data, save_to_json
 from models import get_summary
 from time import sleep
 from transformers import pipeline
@@ -10,66 +10,17 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("target", type=str)
-parser.add_argument("N", type=int, default=1000)
+parser.add_argument("-N", type=int, default=1000)
 parser.add_argument("--overwrite", action="store_true", default=False)
+parser.add_argument("--extras", action="store_true", default=False)
 args = parser.parse_args()
 
 TARGET = args.target
-N = args.N
-
-xsum_responses, xsum_articles, xsum_keys = load_data("xsum", sources = SOURCES)
-cnn_responses, cnn_articles, cnn_keys = load_data("cnn", sources = SOURCES)
-
+N = args.N or 1000
+SOURCES = ['human']
+xsum_responses, xsum_articles, xsum_keys = load_data("xsum", sources = SOURCES, target_model=TARGET, num_samples=N, extras=args.extras)
+cnn_responses, cnn_articles, cnn_keys = load_data("cnn", sources = SOURCES, target_model=TARGET, num_samples=N, extras=args.extras)
 main_models = [TARGET]
-xsum_models_gpt35 = [
-    "xsum_2_ft_gpt35",
-    "xsum_10_ft_gpt35",
-    "xsum_500_ft_gpt35",
-    "xsum_always_1_ft_gpt35",
-    "xsum_random_ft_gpt35",
-    "xsum_readability_ft_gpt35",
-    "xsum_length_ft_gpt35",
-    "xsum_vowelcount_ft_gpt35",
-]
-cnn_models_gpt35 = [
-    "cnn_2_ft_gpt35",
-    "cnn_10_ft_gpt35",
-    "cnn_500_ft_gpt35",
-    "cnn_always_1_ft_gpt35",
-    "cnn_random_ft_gpt35",
-    "cnn_readability_ft_gpt35",
-    "cnn_length_ft_gpt35",
-    "cnn_vowelcount_ft_gpt35",
-]
-
-xsum_models_llama = [
-    "xsum_2_ft_llama",
-    "xsum_10_ft_llama",
-    "xsum_500_ft_llama",
-    "xsum_always_1_ft_llama",
-    "xsum_random_ft_llama",
-    "xsum_readability_ft_llama",
-    "xsum_length_ft_llama",
-    "xsum_vowelcount_ft_llama",
-]
-cnn_models_llama = [
-    "cnn_2_ft_llama",
-    "cnn_10_ft_llama",
-    "cnn_500_ft_llama",
-    "cnn_always_1_ft_llama",
-    "cnn_random_ft_llama",
-    "cnn_readability_ft_llama",
-    "cnn_length_ft_llama",
-    "cnn_vowelcount_ft_llama",
-]
-
-# models = (
-#     main_models
-#     + xsum_models_gpt35
-#     + cnn_models_gpt35
-#     + xsum_models_llama
-#     + cnn_models_llama
-# )
 
 def preprocess_summary_data(dataset_name, dataset, pipe):
     preprocessed_data = []
@@ -89,43 +40,6 @@ def preprocess_summary_data(dataset_name, dataset, pipe):
 
 print("Starting...")
 for model in main_models:
-    # print(model)
-    # if "llama" in model.lower() and False:
-    #     results = {}
-    #     pipe = pipeline("text-generation", model=model, token=os.getenv("HF_TOKEN"), device_map="auto")
-    #     pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
-    #     pipe.model.config.pad_token_id = pipe.model.config.eos_token_id
-
-    #     xsum_pipe_data = preprocess_summary_data("xsum", [xsum_articles[k] for k in xsum_keys], pipe)
-    #     xsum_summaries = []
-    #     for output in pipe(xsum_pipe_data,
-    #                     max_new_tokens=100, # Set max_new_tokens for generation
-    #                     return_full_text=False # Return only the generated part
-    #                    ):
-    #         generated_text = output[0]["generated_text"]
-    #         print(generated_text)
-    #         xsum_summaries.append(generated_text) # Store the raw generated text
-    #     for k, v in zip(xsum_keys, xsum_summaries):
-    #         results[k] = v        
-
-    #     save_to_json(results, f"summaries/xsum/{model}_responses.json")
-    #     results = {}
-        
-
-    #     cnn_pipe_data = preprocess_summary_data("cnn", [cnn_articles[k] for k in cnn_keys], pipe)
-    #     cnn_summaries = []
-    #     for output in pipe(cnn_pipe_data,
-    #                     max_new_tokens=100, # Set max_new_tokens for generation
-    #                     batch_size=8,      # Process in batches for efficiency
-    #                     return_full_text=False # Return only the generated part
-    #                    ):
-    #         generated_text = output[0]["generated_text"]
-    #         print(generated_text)
-    #         cnn_summaries.append(generated_text)
-    #     for k, v in zip(cnn_keys, cnn_summaries):
-    #         results[k] = v
-    #     save_to_json(results, f"summaries/cnn/{model}_responses.json")
-    #     continue
     if args.overwrite or f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json" not in os.listdir("summaries/xsum"):
         results = {}
         for key in tqdm(xsum_keys[:N]):
@@ -134,16 +48,16 @@ for model in main_models:
             # print(results[key])
             save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
     else: 
-        print(f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json already exists")
-    if args.overwrite or f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json" not in os.listdir("summaries/cnn"):
+        print(f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json already exists")
+    if args.overwrite or f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json" not in os.listdir("summaries/cnn"):
         results = {}
         for key in tqdm(cnn_keys[:N]):
             results[key] = get_summary(cnn_articles[key], "cnn", model)[0]
             # print(key)
             # print(results[key])[0]
-            save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
+            save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json")
     else: 
-        print(f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json already exists")
+        print(f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json already exists")
     print(model, "done!")
 
 print("Done!")

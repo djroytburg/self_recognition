@@ -1,6 +1,6 @@
 import sys
 from tqdm import tqdm
-from data import load_data, SOURCES, TARGET, save_to_json, load_from_json, N
+from data import load_data, TARGET, save_to_json, load_from_json
 from models import (
     get_gpt_recognition_logprobs,
     get_model_choice,
@@ -12,6 +12,19 @@ from pprint import pprint
 from random import shuffle
 import json
 import pandas as pd
+
+from self_recognition import simplify_compares
+
+# Parse SOURCES from command line
+if len(sys.argv) < 3:
+    print("Usage: python experiments.py <model_name> <N> <sources> [compare]")
+    print("Example: python experiments.py llama3.2-3b-instruct 350 llama3.2-3b-instruct,deepseek-v3-0324 compare")
+    sys.exit(1)
+
+MODEL = sys.argv[1]
+N = int(sys.argv[2])
+SOURCES = sys.argv[3].split(',')
+COMPARE = len(sys.argv) > 4 and sys.argv[4] == "compare"
 
 # Only suitable for GPT models
 def generate_gpt_logprob_results(
@@ -25,7 +38,7 @@ def generate_gpt_logprob_results(
     exact_model = model
     model = "gpt35" if model.endswith("gpt35") else model
 
-    responses, articles, keys = load_data(dataset)
+    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
     results = []  # load_from_json(f"results/{model}_results.json")
 
     for key in tqdm(keys[starting_idx:], desc=f"[generate_gpt_logprob_results] on {model} for {dataset}"):
@@ -140,7 +153,7 @@ def generate_gpt_logprob_results_with_sources(
     exact_model = model  # the specific fine-tuning version not needed for retrieval
     model = "gpt35" if model.endswith("gpt35") else model
 
-    responses, articles, keys = load_data(dataset)
+    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
     results = []  # load_from_json(f"prompting_results/{model}_results.json")
 
     for key in keys:
@@ -211,7 +224,7 @@ def generate_score_results(dataset, model, starting_idx=0):
     exact_model = model
     model = "gpt35" if model.endswith("gpt35") else model
 
-    responses, articles, keys = load_data(dataset)
+    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
     results = []
 
     for key in tqdm(keys[starting_idx:]):
@@ -241,7 +254,7 @@ def generate_recognition_results(dataset, model, starting_idx=0):
     exact_model = model
     model = "gpt35" if model.endswith("gpt35") else model
 
-    responses, articles, keys = load_data(dataset)
+    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
     results = []
 
     for key in tqdm(keys[starting_idx:]):
@@ -302,42 +315,37 @@ def simplify_comparative_scores(results, model_name=TARGET):
     prefer_df.columns = new_col_names
     return detect_df.mean(axis=0), prefer_df.mean(axis=0)
 
-if sys.argv[-1] == "all" or sys.argv[-1] == TARGET:
-    sys.argv[-1] = "ind_score,ind_recog,compare"
+# Main execution
+for dataset in ["cnn", "xsum"]:
+    number_string = '_' + str(N) if N != 1000 else ''
+    
+    # Individual Scoring (1 to 5) Experiment
+    results = generate_score_results(dataset, MODEL, starting_idx=0)
+    save_to_json(results, f"individual_setting/score_results/{dataset}/{MODEL}_results{number_string}.json")
+    simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{MODEL}_results{number_string}_simple.csv")
+    
+    # Individual Recognition Experiment
+    results = generate_recognition_results(dataset, MODEL, starting_idx=0)
+    save_to_json(results, f"individual_setting/score_results/{dataset}/{MODEL}_recognition_results{number_string}.json")
+    simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{MODEL}_recognition_results{number_string}_simple.csv")
+    
+    # Pairwise Recognition AND Preference Experiment
+    if COMPARE:
+        results = generate_gpt_logprob_results(dataset, MODEL, starting_idx=0)
+        base_output_filename = f"individual_setting/score_results/{dataset}/{MODEL}_comparison_results{number_string}"
+        save_to_json(results, base_output_filename)
+        mean_dc, mean_pc, detect_acc, prefer_rate = simplify_compares(
+            results, model_name_being_evaluated=MODEL
+        )
+        mean_dc.to_csv(f"{base_output_filename}_mean_detect_conf_simple.csv", header=True)
+        mean_pc.to_csv(f"{base_output_filename}_mean_prefer_conf_simple.csv", header=True)
+        detect_acc.to_csv(f"{base_output_filename}_detect_accuracy_simple.csv", header=True)
+        prefer_rate.to_csv(f"{base_output_filename}_self_prefer_rate_simple.csv", header=True)
 
-for model in [TARGET]:
-    for dataset in ["cnn", "xsum"]:
-        if "ind_score" in sys.argv[-1]:
-            results = generate_score_results(dataset, model, starting_idx=0)
-            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}.json")
-            simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
-        if "ind_recog" in sys.argv[-1]:
-            results = generate_recognition_results(dataset, model, starting_idx=0)
-            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}.json")
-            simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{model}_recognition_results{'_' + str(N) if N != 1000 else ''}_simple.csv")
-        if "compare" in sys.argv[-1]:
-            results = generate_gpt_logprob_results(dataset, model, starting_idx=0)
-            save_to_json(results, f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}.json")
-            compare_detect, compare_prefer = simplify_comparative_scores(results)
-            compare_detect.to_csv(f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}_detect_simple.csv")
-            compare_prefer.to_csv(f"individual_setting/score_results/{dataset}/{model}_comparison_results{'_' + str(N) if N != 1000 else ''}_prefer_simple.csv")
-    print(model)
+print(f"Completed experiments for {MODEL}")
 
-# model = "cnn_10_ft_gpt35"
-# results = generate_score_results("cnn", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-# print("3/5")
 
-# model = "xsum_10_ft_gpt35"
-# results = generate_score_results("cnn", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-# print("4/5")
-
-# model = "cnn_10_ft_gpt35"
-# results = generate_score_results("xsum", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-# print("5/5")
-
+# Artifacts from old repo
 """
 print("Starting results_with_worse CNN Experiments!")
 
@@ -404,4 +412,21 @@ for model in models:
     print("Done!")
 
 print("All Done!")
+
+
+# model = "cnn_10_ft_gpt35"
+# results = generate_score_results("cnn", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
+# print("3/5")
+
+# model = "xsum_10_ft_gpt35"
+# results = generate_score_results("cnn", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
+# print("4/5")
+
+# model = "cnn_10_ft_gpt35"
+# results = generate_score_results("xsum", model, starting_idx=10)
+# save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
+# print("5/5")
+
 """
