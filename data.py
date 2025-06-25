@@ -33,6 +33,7 @@ def load_data(dataset, sources, target_model, num_samples, extras=False):
     if target_model in sources:
         keys = list(responses[target_model].keys())
     else:
+        raise IndexError(f"target_model is not in sources: {target_model} {sources}")
         keys = list(articles.keys())
     return responses, articles, keys
 
