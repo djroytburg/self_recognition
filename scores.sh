@@ -1,7 +1,10 @@
 #!/bin/bash
 
+NUMBER=5
 # List of names to iterate through
 NAMES=(
+    "gpt4"
+    "gemini-2.5-flash"
     #"llama3.1-70b-instruct-fp8"
     #"deepseek-r1-0528" reasoning ahh
     #"qwen3-32b-fp8" reasoning ahh
@@ -27,14 +30,14 @@ echo "--- Generating summaries for all models ---"
 for NAME in "${NAMES[@]}"; do
     echo "Checking/Generating summaries for: $NAME"
     
-    N_SUFFIX="_50" # Since N is 50
+    N_SUFFIX="_$NUMBER" # Since N is 50
     XSUM_FILE="summaries/xsum/xsum_train_${NAME}_responses${N_SUFFIX}.json"
     CNN_FILE="summaries/cnn/cnn_train_${NAME}_responses${N_SUFFIX}.json"
 
     # Check if summary files exist for both xsum and cnn
     if [ ! -f "$XSUM_FILE" ] || [ ! -f "$CNN_FILE" ]; then
         echo "Generating summaries for $NAME"
-        python3 generate_summaries.py "$NAME" -N 50
+        python3 generate_summaries.py "$NAME" -N $NUMBER
         
         if [ $? -ne 0 ]; then
             echo "Error: generate_summaries.py failed for $NAME"
@@ -53,8 +56,8 @@ git push
 # Now run experiments once with all models as SOURCES
 echo "--- Running experiments with all models ---"
 SOURCES=$(IFS=,; echo "${NAMES[*]}")
-echo "Executing: python3 experiments.py $SOURCES 50 compare"
-python3 experiments.py "$SOURCES" 50 compare
+echo "Executing: python3 experiments.py $SOURCES $NUMBER compare"
+python3 experiments.py "$SOURCES" $NUMBER compare
 
 if [ $? -ne 0 ]; then
     echo "Error: experiments.py failed"

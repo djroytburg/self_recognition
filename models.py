@@ -1,10 +1,12 @@
 from datasets import load_dataset
 from dotenv import load_dotenv
 from openai import OpenAI
+from martian_apart_hack_sdk.martian_client import MartianClient
 import anthropic
 from pprint import pprint
 import json
 import os
+from time import sleep
 
 import openai
 from llama_eval import get_llama_summary
@@ -50,8 +52,17 @@ GPT_MODEL_ID = {
 }
 
 load_dotenv()
-openai_api_key = os.getenv("LAMBDA_API_KEY")
-openai_api_base = "https://api.lambda.ai/v1"
+lambda_api_key = os.getenv("LAMBDA_API_KEY")
+lambda_api_base = "https://api.lambda.ai/v1"
+
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_base = os.getenv("OPENAI_BASE_URL")
+
+martian_api_key = os.getenv("MARTIAN_API_KEY")
+martian_api_base = os.getenv("MARTIAN_API_URL")
+
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+gemini_api_base = os.getenv("GEMINI_BASE_URL")
 
 # Initialize the OpenAI client
 openai_client = OpenAI(
@@ -60,6 +71,42 @@ openai_client = OpenAI(
     timeout=120,
     max_retries=10
 )
+if openai_client is None:
+    exit()
+def init_client(model):
+    if "gpt" in model.lower() and False: #using martian client
+        print("Using Martian as Provider")
+
+        return OpenAI(
+            api_key=martian_api_key,
+            base_url= martian_api_base + "/openai/v2",
+            timeout=120,
+            max_retries=10
+        )
+    elif "gpt" in model.lower():
+        print("Using OpenAI as Provider")
+        return OpenAI(
+            api_key=openai_api_key,
+            base_url= openai_api_base,
+            timeout=120,
+            max_retries=10
+        )
+    elif "gemini" in model.lower():
+        print("Using Google as Provider")
+        return OpenAI(
+            api_key=gemini_api_key,
+            base_url=gemini_api_base,
+            timeout=120,
+            max_retries=10
+        )
+    else:
+        print("Using Lambda API as Provider")
+        return OpenAI(
+            api_key=lambda_api_key,
+            base_url=lambda_api_base,
+            timeout=120,
+            max_retries=10
+        )
 anthropic_client = anthropic.Anthropic()
 
 
@@ -72,7 +119,6 @@ def get_gpt_summary(article, dataset, model) -> str:
             "content": f"Article:\n{article}\n\nProvide only the summary with no other text.",
         },
     ]
-
     response = openai_client.chat.completions.create(
         model=model,
         messages=history,
@@ -84,6 +130,12 @@ def get_gpt_summary(article, dataset, model) -> str:
 
 
 def get_summary(article, dataset, model, pipe=None):
+    global openai_client
+    assert openai_client is not None
+    apk = openai_api_key if "gpt" in model.lower() else gemini_api_key if "gemini" in model.lower() else lambda_api_key
+    if openai_client.api_key != apk:
+        print("Need new client")
+        openai_client = init_client(model)
     if model == "claude":
         return get_claude_summary(
             article,
@@ -224,6 +276,12 @@ def get_gpt_choice(
 def get_model_choice(
     summary1, summary2, article, choice_type, model, return_logprobs=False
 ):
+    global openai_client
+    apk = martian_api_key if "gpt" in model.lower() else gemini_api_key if "gemini" in model.lower() else openai_api_key
+    if openai_client.api_key != apk:
+        print("Need new client")
+        openai_client = init_client(model)
+
     if "claude" in model:
         return get_claude_choice(
             summary1, summary2, article, choice_type, model="claude-2.1"
