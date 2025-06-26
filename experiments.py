@@ -1,6 +1,6 @@
 import sys
 from tqdm import tqdm
-from data import load_data, TARGET, save_to_json, load_from_json
+from data import load_data, save_to_json, load_from_json
 from models import (
     get_gpt_recognition_logprobs,
     get_model_choice,
@@ -229,7 +229,7 @@ def generate_score_results(dataset, model, starting_idx=0):
 
     for key in tqdm(keys[starting_idx:]):
         article = articles[key]
-        for target_model in SOURCES + [TARGET]:
+        for target_model in SOURCES:
             summary = responses[target_model][key]
 
             response = get_gpt_score(summary, article, exact_model)
@@ -259,7 +259,7 @@ def generate_recognition_results(dataset, model, starting_idx=0):
 
     for key in tqdm(keys[starting_idx:]):
         article = articles[key]
-        for target_model in SOURCES + [TARGET]:
+        for target_model in SOURCES:
             summary = responses[target_model][key]
 
             res = get_gpt_recognition_logprobs(summary, article, exact_model)
@@ -284,7 +284,7 @@ def generate_recognition_results(dataset, model, starting_idx=0):
 def simplify_scores(results):
     score = lambda x: [{a['target_model']: sum([int(k) * v for k, v in a['scores'].items()])} for a in results if a['key'] == x]
     keys = list(set([a['key'] for a in results]))
-    return pd.DataFrame([[list(v.values())[0] for v in score(key)] for key in keys], columns = SOURCES + [TARGET], index=keys).mean(axis=0)
+    return pd.DataFrame([[list(v.values())[0] for v in score(key)] for key in keys], columns = SOURCES, index=keys).mean(axis=0)
 
 def simplify_recognition_results(results):
     keys = list(set([a['key'] for a in results]))
@@ -292,28 +292,10 @@ def simplify_recognition_results(results):
     for key in keys:
         keyset[key] = [c['recognition_score'] for c in results if c['key'] == key]
     recog_data = pd.DataFrame(keyset).T
-    recog_data.columns = SOURCES + [TARGET]
+    recog_data.columns = SOURCES
     recog_data.index = keys
     return recog_data.mean(axis=0)
 
-def simplify_comparative_scores(results, model_name=TARGET):
-    detect = {}
-    prefer = {}
-    for result in results:
-        model = result['model']
-        if model not in detect:
-            detect[model] = []
-        if model not in prefer:
-            prefer[model] = []
-        
-        detect[model].append(result['detection_score'])
-        prefer[model].append(result['self_preference'])
-    detect_df, prefer_df = pd.DataFrame(detect), pd.DataFrame(prefer)
-    new_col_names = list(detect_df.columns)[:-1]
-    new_col_names.append(model_name)
-    detect_df.columns = new_col_names
-    prefer_df.columns = new_col_names
-    return detect_df.mean(axis=0), prefer_df.mean(axis=0)
 
 # Main execution
 for dataset in ["cnn", "xsum"]:
