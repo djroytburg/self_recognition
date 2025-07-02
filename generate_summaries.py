@@ -1,63 +1,73 @@
-from data import load_data, save_to_json
-from models import get_summary
-from time import sleep
-from transformers import pipeline
+from models import get_code, get_summary, code_datasets
 from tqdm import tqdm
 import os
-import sys
-from prompts import DATASET_SYSTEM_PROMPTS
+import json
 import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument("target", type=str)
-parser.add_argument("-N", type=int, default=1000)
-parser.add_argument("--overwrite", action="store_true", default=False)
-parser.add_argument("--extras", action="store_true", default=False)
-args = parser.parse_args()
+def load_from_json(file_name) -> dict:
+    """Load a dictionary from a JSON file."""
+    with open(file_name, "r") as f:
+        return json.load(f)
 
-TARGET = args.target
-N = args.N or 1000
-SOURCES = ['human']
-xsum_responses, xsum_articles, xsum_keys = load_data("xsum", sources = SOURCES, target_model=TARGET, num_samples=N, extras=args.extras)
-cnn_responses, cnn_articles, cnn_keys = load_data("cnn", sources = SOURCES, target_model=TARGET, num_samples=N, extras=args.extras)
-main_models = [TARGET]
+def load_articles(dataset, extras=False):
+    """
+    Load articles for a given dataset and set of sources.
+    Returns (articles, keys).
+    """
+    data_type = "code" if dataset in code_datasets else "articles"
+    articles = load_from_json(f"{data_type}/{dataset}_train_{data_type}{'_extra' if extras else ''}.json")
+    keys = list(articles.keys())
+    return articles, keys
 
-def preprocess_summary_data(dataset_name, dataset, pipe):
-    preprocessed_data = []
-    for data in dataset:
-        messages = [
-            {"role": "system", "content": DATASET_SYSTEM_PROMPTS[dataset_name]},
-            {
-                "role": "user",
-                "content": f"Article:\n{data}\n\nProvide only the summary with no other text.",
-            },
-        ]
-        tokenizer = pipe.tokenizer
-        formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        preprocessed_data.append(formatted_prompt)
-    return preprocessed_data
+def process_dataset(dataset, model, N, overwrite=False, extras=False):
+    merged_file = f"summaries/{dataset}/{dataset}_train_{model}_responses_merged.json"
+    # Load merged summaries if exists
+    if os.path.exists(merged_file):
+        with open(merged_file, "r") as f:
+            summaries = json.load(f)
+    else:
+        summaries = {}
+    # Load articles and keys
+    articles, keys = load_articles(dataset, extras=extras)
+    all_keys = list(keys)
+    # Determine missing keys
+    missing_keys = [k for k in all_keys[:N] if k not in summaries]
+    if not overwrite and len(summaries) >= N:
+        print(f"[INFO] Already have {len(summaries)} summaries for {model} in {dataset} (N={N}). Skipping.")
+        return
+    if overwrite:
+        print(f"[INFO] Overwrite enabled. Will regenerate all {N} summaries for {model} in {dataset}.")
+        missing_keys = all_keys[:N]
+        summaries = {}
+    print(f"[INFO] {len(summaries)} existing summaries found for {dataset}/{model} (target N={N}).")
+    print(f"[INFO] {len(missing_keys)} missing summaries to generate for {dataset}/{model}.")
+    get_fxn = get_summary if dataset not in code_datasets else get_code
+    for key in tqdm(missing_keys, desc=f"Generating missing {dataset.upper()} summaries for {model}"):
+        summaries[key] = get_fxn(articles[key], dataset, model)
+        print(f"    [INFO] Generated summary for key: {key}")
+        print(summaries[key])
+        with open(merged_file, "w") as f:
+            json.dump(summaries, f, indent=2)
+    print(f"[INFO] All summaries for {dataset}/{model} saved to {merged_file}. Total: {len(summaries)}.")
 
+if __name__ == "__main__": 
 
-print("Starting...")
-for model in main_models:
-    if args.overwrite or f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json" not in os.listdir("summaries/xsum"):
-        results = {}
-        for key in tqdm(xsum_keys[:N]):
-            results[key] = get_summary(xsum_articles[key], "xsum", model)[0]
-            # print(key)
-            # print(results[key])
-            save_to_json(results, f"summaries/xsum/xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}.json")
-    else: 
-        print(f"xsum_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json already exists")
-    if args.overwrite or f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json" not in os.listdir("summaries/cnn"):
-        results = {}
-        for key in tqdm(cnn_keys[:N]):
-            results[key] = get_summary(cnn_articles[key], "cnn", model)[0]
-            # print(key)
-            # print(results[key])[0]
-            save_to_json(results, f"summaries/cnn/cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json")
-    else: 
-        print(f"cnn_train_{model}_responses{'_' + str(N) if N != 1000 else ''}{'_extra' if args.extras else ''}.json already exists")
-    print(model, "done!")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("target", type=str)
+    parser.add_argument("-N", type=int, default=1000)
+    parser.add_argument("--overwrite", action="store_true", default=False)
+    parser.add_argument("--extras", action="store_true", default=False)
+    args = parser.parse_args()
 
-print("Done!")
+    TARGET = args.target.split(",")
+    N = args.N or 1000
+    main_models = TARGET
+
+    print("Starting...")
+    for model in main_models:
+        process_dataset("medmcqa", model, N, overwrite=args.overwrite, extras=args.extras)
+        process_dataset("xsum", model, N, overwrite=args.overwrite, extras=args.extras)
+        process_dataset("cnn", model, N, overwrite=args.overwrite, extras=args.extras)
+
+        print(f"[INFO] {model} done!")
+    print("Done!")

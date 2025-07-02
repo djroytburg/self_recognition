@@ -4,411 +4,289 @@ from data import load_data, save_to_json, load_from_json
 from models import (
     get_gpt_recognition_logprobs,
     get_model_choice,
+    get_gpt_compare,
     get_logprobs_choice_with_sources,
     get_gpt_score,
+    GPT_MODEL_ID,
+    code_datasets,
 )
 from math import exp
 from pprint import pprint
 from random import shuffle
 import json
 import pandas as pd
-
-from self_recognition import simplify_compares
-
-# Parse SOURCES from command line
-if len(sys.argv) < 3:
-    print("Usage: python experiments.py <model_name> <N> <sources> [compare]")
-    print("Example: python experiments.py llama3.2-3b-instruct 350 llama3.2-3b-instruct,deepseek-v3-0324 compare")
-    sys.exit(1)
-
-MODEL = sys.argv[1]
-N = int(sys.argv[2])
-SOURCES = sys.argv[3].split(',')
-COMPARE = len(sys.argv) > 4 and sys.argv[4] == "compare"
-
-# Only suitable for GPT models
-def generate_gpt_logprob_results(
-    dataset,
-    model,
-    starting_idx=0,
-    detection_type="detection",
-    comparison_type="comparison",
-):
-    # For retrieving summaries, the specific fine-tuning version isn't needed
-    exact_model = model
-    model = "gpt35" if model.endswith("gpt35") else model
-
-    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
-    results = []  # load_from_json(f"results/{model}_results.json")
-
-    for key in tqdm(keys[starting_idx:], desc=f"[generate_gpt_logprob_results] on {model} for {dataset}"):
-        article = articles[key]
-
-        source_summary = responses[model][key]
-        for other in [s for s in SOURCES if s != model]:
-            result = {"key": key, "model": other}
-            other_summary = responses[other][key]
-
-            # Detection
-            forward_result = get_model_choice(
-                source_summary,
-                other_summary,
-                article,
-                detection_type,
-                exact_model,
-                return_logprobs=True,
-            )
-            backward_result = get_model_choice(
-                other_summary,
-                source_summary,
-                article,
-                detection_type,
-                exact_model,
-                return_logprobs=True,
-            )
-
-            forward_choice = forward_result[0].token
-            backward_choice = backward_result[0].token
-
-            result["forward_detection"] = forward_choice
-            result["forward_detection_probability"] = exp(forward_result[0].logprob)
-            result["backward_detection"] = backward_choice
-            result["forward_detection_probability"] = exp(forward_result[0].logprob)
-
-            match (forward_choice, backward_choice):
-                case ("1", "2"):
-                    result["detection_score"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[0].logprob)
-                    )
-                case ("2", "1"):
-                    result["detection_score"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("1", "1"):
-                    result["detection_score"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("2", "2"):
-                    result["detection_score"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
-                    )
-
-            # Comparison
-            forward_result = get_model_choice(
-                source_summary,
-                other_summary,
-                article,
-                comparison_type,
-                exact_model,
-                return_logprobs=True,
-            )
-            backward_result = get_model_choice(
-                other_summary,
-                source_summary,
-                article,
-                comparison_type,
-                exact_model,
-                return_logprobs=True,
-            )
-
-            forward_choice = forward_result[0].token
-            backward_choice = backward_result[0].token
-
-            # If the comparison asked "Which is worse?" then reverse the options
-            if comparison_type == "comparison_with_worse":
-                forward_choice = "1" if forward_choice == "2" else "2"
-                backward_choice = "1" if backward_choice == "2" else "2"
-
-            result["forward_comparison"] = forward_choice
-            result["forward_comparison_probability"] = exp(forward_result[0].logprob)
-            result["backward_comparison"] = backward_choice
-            result["backward_comparison_probability"] = exp(backward_result[0].logprob)
-
-            match (forward_choice, backward_choice):
-                case ("1", "2"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[0].logprob)
-                    )
-                case ("2", "1"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("1", "1"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("2", "2"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
-                    )
-
-            results.append(result)
-    return results
-
-
-# Only suitable for GPT models
-def generate_gpt_logprob_results_with_sources(
-    dataset, model, reversed=False, randomized=False
-):
-    exact_model = model  # the specific fine-tuning version not needed for retrieval
-    model = "gpt35" if model.endswith("gpt35") else model
-
-    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
-    results = []  # load_from_json(f"prompting_results/{model}_results.json")
-
-    for key in keys:
-        article = articles[key]
-        source_summary = responses[model][key]
-
-        for other in [s for s in SOURCES if s != model]:
-            result = {"key": key, "model": other}
-            other_summary = responses[other][key]
-
-            random_labels = [model, other]
-            shuffle(random_labels)
-
-            # Comparison
-            forward_result = get_logprobs_choice_with_sources(
-                source_summary,
-                other_summary,
-                random_labels[0] if randomized else other if reversed else model,
-                random_labels[1] if randomized else model if reversed else other,
-                article,
-                exact_model,
-            )
-            backward_result = get_logprobs_choice_with_sources(
-                other_summary,
-                source_summary,
-                random_labels[1] if randomized else model if reversed else other,
-                random_labels[0] if randomized else other if reversed else model,
-                article,
-                exact_model,
-            )
-
-            forward_choice = forward_result[0].token
-            backward_choice = backward_result[0].token
-
-            if randomized:
-                result["random_labels"] = random_labels
-
-            result["forward_comparison"] = forward_choice
-            result["forward_probability"] = exp(forward_result[0].logprob)
-            result["backward_comparison"] = backward_choice
-            result["backward_probability"] = exp(backward_result[0].logprob)
-
-            match (forward_choice, backward_choice):
-                case ("1", "2"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[0].logprob)
-                    )
-                case ("2", "1"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("1", "1"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[0].logprob) + exp(backward_result[1].logprob)
-                    )
-                case ("2", "2"):
-                    result["self_preference"] = 0.5 * (
-                        exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
-                    )
-
-            results.append(result)
-    return results
-
-
-def generate_score_results(dataset, model, starting_idx=0):
-    SCORES = ["1", "2", "3", "4", "5"]
-
-    exact_model = model
-    model = "gpt35" if model.endswith("gpt35") else model
-
-    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
-    results = []
-
-    for key in tqdm(keys[starting_idx:]):
-        article = articles[key]
-        for target_model in SOURCES:
-            summary = responses[target_model][key]
-
-            response = get_gpt_score(summary, article, exact_model)
-            result = {i.token: exp(i.logprob) for i in response if i.token in SCORES}
-            for score in SCORES:
-                if score not in result:
-                    result[score] = 0
-
-            results.append(
-                {
-                    "key": key,
-                    "model": model,
-                    "target_model": target_model,
-                    "scores": result,
-                }
-            )
-
-    return results
-
-
-def generate_recognition_results(dataset, model, starting_idx=0):
-    exact_model = model
-    model = "gpt35" if model.endswith("gpt35") else model
-
-    responses, articles, keys = load_data(dataset, sources=SOURCES, target_model=MODEL, num_samples=N)
-    results = []
-
-    for key in tqdm(keys[starting_idx:]):
-        article = articles[key]
-        for target_model in SOURCES:
-            summary = responses[target_model][key]
-
-            res = get_gpt_recognition_logprobs(summary, article, exact_model)
-            res = {i.token: exp(i.logprob) for i in res}
-
-            if "Yes" not in res:
-                print(key, exact_model, target_model, res)
-            else:
-                results.append(
-                    {
-                        "key": key,
-                        "model": exact_model,
-                        "target_model": target_model,
-                        "recognition_score": res["Yes"],
-                        "res": res,
-                        "ground_truth": int(model == target_model),
-                    }
-                )
-
-    return results
-
-def simplify_scores(results):
-    score = lambda x: [{a['target_model']: sum([int(k) * v for k, v in a['scores'].items()])} for a in results if a['key'] == x]
-    keys = list(set([a['key'] for a in results]))
-    return pd.DataFrame([[list(v.values())[0] for v in score(key)] for key in keys], columns = SOURCES, index=keys).mean(axis=0)
-
-def simplify_recognition_results(results):
-    keys = list(set([a['key'] for a in results]))
-    keyset = {}
-    for key in keys:
-        keyset[key] = [c['recognition_score'] for c in results if c['key'] == key]
-    recog_data = pd.DataFrame(keyset).T
-    recog_data.columns = SOURCES
-    recog_data.index = keys
-    return recog_data.mean(axis=0)
-
-
-# Main execution
-for dataset in ["cnn", "xsum"]:
-    number_string = '_' + str(N) if N != 1000 else ''
-    
-    # Individual Scoring (1 to 5) Experiment
-    results = generate_score_results(dataset, MODEL, starting_idx=0)
-    save_to_json(results, f"individual_setting/score_results/{dataset}/{MODEL}_results{number_string}.json")
-    simplify_scores(results).to_csv(f"individual_setting/score_results/{dataset}/{MODEL}_results{number_string}_simple.csv")
-    
-    # Individual Recognition Experiment
-    results = generate_recognition_results(dataset, MODEL, starting_idx=0)
-    save_to_json(results, f"individual_setting/score_results/{dataset}/{MODEL}_recognition_results{number_string}.json")
-    simplify_recognition_results(results).to_csv(f"individual_setting/score_results/{dataset}/{MODEL}_recognition_results{number_string}_simple.csv")
-    
-    # Pairwise Recognition AND Preference Experiment
-    if COMPARE:
-        results = generate_gpt_logprob_results(dataset, MODEL, starting_idx=0)
-        base_output_filename = f"individual_setting/score_results/{dataset}/{MODEL}_comparison_results{number_string}"
-        save_to_json(results, base_output_filename)
-        mean_dc, mean_pc, detect_acc, prefer_rate = simplify_compares(
-            results, model_name_being_evaluated=MODEL
-        )
-        mean_dc.to_csv(f"{base_output_filename}_mean_detect_conf_simple.csv", header=True)
-        mean_pc.to_csv(f"{base_output_filename}_mean_prefer_conf_simple.csv", header=True)
-        detect_acc.to_csv(f"{base_output_filename}_detect_accuracy_simple.csv", header=True)
-        prefer_rate.to_csv(f"{base_output_filename}_self_prefer_rate_simple.csv", header=True)
-
-print(f"Completed experiments for {MODEL}")
-
-
-# Artifacts from old repo
-"""
-print("Starting results_with_worse CNN Experiments!")
-
-model = "cnn_2_ft_gpt35"
-results = generate_gpt_logprob_results(
-    "cnn", model, comparison_type="comparison_with_worse", starting_idx=2
+import argparse
+from simplify_compares import simplify_compares
+import os
+from utils_config import (
+    load_config_from_cli_and_file,
+    generate_experiment_id,
+    get_output_folder,
+    save_config_and_metadata,
 )
-save_to_json(results, f"results_with_worse/cnn/{model}_results.json")
-print(f"Done with {model}!")
+from utils_logging import get_logger
+import glob
+from plot_heatmap import make_heatmap_matrix
 
-model = "cnn_10_ft_gpt35"
-results = generate_gpt_logprob_results(
-    "cnn", model, comparison_type="comparison_with_worse", starting_idx=10
-)
-save_to_json(results, f"results_with_worse/cnn/{model}_results.json")
-print(f"Done with {model}!")
 
-models = [
-    "cnn_500_ft_gpt35",
-    "cnn_always_1_ft_gpt35",
-    "cnn_random_ft_gpt35",
-    "cnn_readability_ft_gpt35",
-    "cnn_length_ft_gpt35",
-    "cnn_vowelcount_ft_gpt35",
-]
+def aggregate_existing_results(result_json_path):
+    """Load existing results if the file exists, else return an empty list."""
+    if os.path.exists(result_json_path):
+        with open(result_json_path, "r") as f:
+            try:
+                return json.load(f)
+            except Exception:
+                return []
+    return []
 
-for model in models:
-    print(f"Starting {model}")
-    results = generate_gpt_logprob_results(
-        "cnn", model, comparison_type="comparison_with_worse", starting_idx=500
+def get_existing_keys(results, key_field="key"):
+    """Get a set of keys already processed in the results."""
+    return set(r[key_field] for r in results)
+
+def find_existing_result(dataset, model, reference, key, search_dirs):
+    """
+    Search for an existing result for (model, reference, key) in the given directories.
+    Returns the result dict if found, else None.
+    """
+    for search_dir in search_dirs:
+        if "individual_setting" in search_dir:
+            pattern = os.path.join(search_dir, f"{model}_comparison_results*.json")
+        else:
+            pattern = os.path.join(search_dir, model, f"{model}_comparison_results*.json")
+        for file in glob.glob(pattern):
+            try:
+                with open(file, "r") as f:
+                    data = json.load(f)
+                for entry in data:
+                    if entry["model"] == reference and entry["key"] == key:
+                        entry['source'] = file
+                        return entry
+            except Exception:
+                continue
+    return None
+
+# 1. Parse CLI arguments
+parser = argparse.ArgumentParser(description="Run model experiments with reproducible config and logging.")
+parser.add_argument("--dataset", type=str, required=False, default=None)
+parser.add_argument("--models", type=str, required=False, default=None)  # comma-separated
+parser.add_argument("--references", type=str, required=False, default=None)
+parser.add_argument("--N", type=int, default=None)
+parser.add_argument("--compare_type", type=str, default=None)
+parser.add_argument("--detection_type", type=str, default=None)
+parser.add_argument("--overwrite", action="store_true")
+parser.add_argument("--log_level", type=str, default=None)
+parser.add_argument("--timeout", type=int, default=None)
+parser.add_argument("--max_retries", type=int, default=None)
+parser.add_argument("--use_existing_results", action="store_true", default=False)
+parser.add_argument("--config", type=str, default=None)
+args = parser.parse_args()
+
+# Error if neither config nor (dataset and models) are specified
+if not args.config and (not args.dataset or not args.models):
+    raise ValueError(
+        "You must specify either --config (with dataset and models inside) "
+        "or both --dataset and --models as CLI arguments."
     )
-    save_to_json(results, f"results_with_worse/cnn/{model}_results.json")
-    print("Done!")
 
-print("All Done!")
-"""
+# Convert CLI args to dict, handling comma-separated models
+cli_args = vars(args)
+if cli_args["models"]:
+    cli_args["models"] = [m.strip() for m in cli_args["models"].split(",")]
+if not cli_args['references']:
+    cli_args['references'] = cli_args['models']
+else:
+    cli_args['references'] = [m.strip() for m in cli_args['references'].split(",")]
+    cli_args['references'].extend(cli_args['models'])
 
-"""
-print("Starting XSUM Scoring Experiments!")
+# 2. Load config and metadata
+config = load_config_from_cli_and_file(cli_args, config_file_path=args.config)
+config["dataset"] = args.dataset
 
-model = "cnn_2_ft_gpt35"
-results = generate_score_results("xsum", model, starting_idx=2)
-save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-print(f"Done with {model}!")
+experiment_id = generate_experiment_id(
+    dataset=config["dataset"], N=config["N"], models=config["models"]
+)
+output_folder = get_output_folder(config["dataset"], experiment_id)
+save_config_and_metadata(config, output_folder)
 
-model = "cnn_2_ft_gpt35"
-results = generate_score_results("xsum", model, starting_idx=10)
-save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-print(f"Done with {model}!")
+# 3. Set up logging
+logger = get_logger(output_folder, log_level=config["log_level"])
+logger.info(f"Experiment started: {experiment_id}")
+logger.info(f"Config: {json.dumps(config, indent=2)}")
 
-models = [
-    "cnn_500_ft_gpt35",
-    "cnn_always_1_ft_gpt35",
-    "cnn_random_ft_gpt35",
-    "cnn_readability_ft_gpt35",
-    "cnn_length_ft_gpt35",
-    "cnn_vowelcount_ft_gpt35",
-]
+# 4. Main experiment logic
+models = config["models"]
+references = config['references']
+N = config["N"]
+dataset = config["dataset"]
+compare_type = config["compare_type"]
+detection_type = config["detection_type"]
+if config['dataset'] in code_datasets:
+    detection_type += "_code"
+    compare_type += "_code"
+overwrite = config["overwrite"]
+use_existing_results = config["use_existing_results"]
+
+# Prepare search directories for result reuse
+search_dirs = [output_folder]
+# Add all previous experiment folders for this dataset
+exp_dataset_dir = os.path.join("experiments", dataset)
+if os.path.exists(exp_dataset_dir):
+    for d in os.listdir(exp_dataset_dir):
+        full_path = os.path.join(exp_dataset_dir, d)
+        if os.path.isdir(full_path) and full_path != output_folder:
+            search_dirs.append(full_path)
+# Add legacy score_results folder
+legacy_dir = os.path.join("individual_setting", "score_results", dataset)
+if os.path.exists(legacy_dir):
+    search_dirs.append(legacy_dir)
+
+# Load data once for all models
+logger.info(f"Loading data for dataset: {dataset}, N={N}, models={models}")
+responses, articles, keys = load_data(dataset, sources=references, target_model=models[0], num_samples=N, logger=logger)
+logger.info(f"Loaded {len(keys)} keys for dataset {dataset}")
 
 for model in models:
-    print(f"Starting {model}")
-    results = generate_score_results("xsum", model, starting_idx=500)
-    save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-    print("Done!")
+    model_folder = os.path.join(output_folder, model)
+    os.makedirs(model_folder, exist_ok=True)
+    logger.info(f"Processing model: {model}")
+    # Comparison experiment
+    comparison_json_path = os.path.join(model_folder, f"{model}_comparison_results.json")
+    if not overwrite and os.path.exists(comparison_json_path):
+        logger.info(f"Skipping {comparison_json_path} (already exists)")
+        with open(comparison_json_path, "r") as f:
+            results = json.load(f)
+    else:
+        logger.info(f"Running comparison experiment for {model}")
+        results = []
+        glitches = 0
+        for key in tqdm(keys, desc=f"[Comparison] {model}"):
+            article = articles[key]
+            source_summary = responses[model][key]
+            for other in [s for s in references if s != model]:
+                # # Debug print for types and values
+                # print(f"[DEBUG] find_existing_result call: model={model} (type={type(model)}), other={other} (type={type(other)}), key={key} (type={type(key)})")
+                # print(f"[DEBUG] search_dirs: {search_dirs}")
+                # Try to reuse result
+                if use_existing_results:
+                    existing = find_existing_result(dataset, model, other, key, search_dirs)
+                    if existing:
+                        logger.info(f"Reusing result for ({model}, {other}, {key})")
+                        results.append(existing)
+                        continue
+                result = {"key": key, "model": other}
+                other_summary = responses[other][key]
+                
+                # Detection
+                forward_result = get_model_choice(
+                    source_summary, other_summary, article, detection_type, model, return_logprobs=True,
+                )
+                backward_result = get_model_choice(
+                    other_summary, source_summary, article, detection_type, model, return_logprobs=True,
+                )
+                forward_choice = forward_result[0].token
+                backward_choice = backward_result[0].token
+                forward_result = forward_result[0].top_logprobs
+                backward_result = backward_result[0].top_logprobs
+                result["forward_detection"] = forward_choice
+                result["forward_detection_probability"] = exp(forward_result[0].logprob)
+                result["backward_detection"] = backward_choice
+                result["forward_detection_probability"] = exp(forward_result[0].logprob)
+                result["source"] = comparison_json_path
+                # Score
+                match (forward_choice, backward_choice):
+                    case ("1", "2"):
+                        result["detection_score"] = 0.5 * (
+                            exp(forward_result[0].logprob) + exp(backward_result[0].logprob)
+                        )
+                    case ("2", "1"):
+                        result["detection_score"] = 0.5 * (
+                            exp(forward_result[1].logprob) + exp(backward_result[1].logprob)
+                        )
+                    case ("1", "1"):
+                        result["detection_score"] = 0.5 * (
+                            exp(forward_result[0].logprob) + exp(backward_result[1].logprob)
+                        )
+                    case ("2", "2"):
+                        result["detection_score"] = 0.5 * (
+                            exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
+                        )
+                # Comparison
+                forward_result = get_model_choice(
+                    source_summary, other_summary, article, compare_type, model, return_logprobs=True,
+                )
+                backward_result = get_model_choice(
+                    other_summary, source_summary, article, compare_type, model, return_logprobs=True,
+                )
+                if False: #Debugging for anomalous model behavior
+                    comparison = get_gpt_compare(source_summary, other_summary, article, model=model)
+                    logger.info("Forward: ")
+                    logger.info(comparison)
+                    result['forward_explain'] = comparison
+                    comparison = get_gpt_compare(other_summary, source_summary, article, model=model)
+                    logger.info("Backward: ")
+                    logger.info(comparison)
+                    result['backward_explain'] = comparison
+                
+                forward_choice = forward_result[0].token
+                backward_choice = backward_result[0].token
+                forward_result = forward_result[0].top_logprobs
+                backward_result = backward_result[0].top_logprobs
+                result["forward_comparison"] = forward_choice
+                result["forward_comparison_probability"] = exp(forward_result[0].logprob)
+                result["backward_comparison"] = backward_choice
+                result["backward_comparison_probability"] = exp(backward_result[0].logprob)
+                match (forward_choice, backward_choice):
+                    case ("1", "2"):
+                        result["self_preference"] = 0.5 * (
+                            exp(forward_result[0].logprob) + exp(backward_result[0].logprob)
+                        )
+                    case ("2", "1"):
+                        result["self_preference"] = 0.5 * (
+                            exp(forward_result[1].logprob) + exp(backward_result[1].logprob)
+                        )
+                    case ("1", "1"):
+                        result["self_preference"] = 0.5 * (
+                            exp(forward_result[0].logprob) + exp(backward_result[1].logprob)
+                        )
+                    case ("2", "2"):
+                        result["self_preference"] = 0.5 * (
+                            exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
+                        )
+                    case _:
+                        glitches += 1
+                        continue
+                logger.info(f"Computed new result for ({model}, {other}, {key})")
+                results.append(result)
+        save_to_json(results, comparison_json_path)
+        logger.info(f"Saved comparison results to {comparison_json_path}")
+    # Simplify and save metrics
+    mean_dc, mean_pc, detect_acc, prefer_rate = simplify_compares(
+        results, model_name_being_evaluated=model
+    )
+    mean_dc.to_csv(os.path.join(model_folder, f"{model}_comparison_results_mean_detect_conf_simple.csv"), header=True)
+    mean_pc.to_csv(os.path.join(model_folder, f"{model}_comparison_results_mean_prefer_conf_simple.csv"), header=True)
+    detect_acc.to_csv(os.path.join(model_folder, f"{model}_comparison_results_detect_accuracy_simple.csv"), header=True)
+    prefer_rate.to_csv(os.path.join(model_folder, f"{model}_comparison_results_self_prefer_rate_simple.csv"), header=True)
+    logger.info(f"Saved simplified metrics for {model}")
+    # Sanity check
+    expected_results = len(keys) * (len(references) - 1) - glitches
+    assert len(results) == expected_results, f"Expected {expected_results} results for model {model}, got {len(results)}"
+    logger.info(f"Sanity check passed: {len(results)} results for {model}")
 
-print("All Done!")
+# Generate heatmap for self_preference_rate
+logger.info("Generating self-preference rate heatmap for this experiment...")
+make_heatmap_matrix(
+    dataset=dataset,
+    n=N,
+    metric='self_preference_rate'
+)
 
+# Generate heatmap for detection_accuracy
+logger.info("Generating detection accuracy heatmap for this experiment...")
+make_heatmap_matrix(
+    dataset=dataset,
+    n=N,
+    metric='detection_accuracy'
+)
 
-# model = "cnn_10_ft_gpt35"
-# results = generate_score_results("cnn", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-# print("3/5")
-
-# model = "xsum_10_ft_gpt35"
-# results = generate_score_results("cnn", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/cnn/{model}_results.json")
-# print("4/5")
-
-# model = "cnn_10_ft_gpt35"
-# results = generate_score_results("xsum", model, starting_idx=10)
-# save_to_json(results, f"individual_setting/score_results/xsum/{model}_results.json")
-# print("5/5")
-
-"""
+logger.info("Experiment complete.")

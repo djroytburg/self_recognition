@@ -12,19 +12,26 @@ import openai
 from llama_eval import get_llama_summary
 
 from prompts import (
+    COMPARISON_PROMPT_TEMPLATE_CODE,
+    COMPARISON_SYSTEM_PROMPT_CODE,
     DATASET_SYSTEM_PROMPTS,
     COMPARISON_PROMPT_TEMPLATE,
     COMPARISON_SYSTEM_PROMPT,
     DETECTION_PROMPT_TEMPLATE,
+    DETECTION_PROMPT_TEMPLATE_CODE,
     DETECTION_PROMPT_TEMPLATE_VS_HUMAN,
     DETECTION_PROMPT_TEMPLATE_VS_MODEL,
     DETECTION_SYSTEM_PROMPT,
     COMPARISON_PROMPT_TEMPLATE_WITH_SOURCES,
     COMPARISON_PROMPT_TEMPLATE_WITH_WORSE,
+    DETECTION_SYSTEM_PROMPT_CODE,
     SCORING_SYSTEM_PROMPT,
     RECOGNITION_SYSTEM_PROMPT,
     RECOGNITION_PROMPT_TEMPLATE,
 )
+
+code_datasets = ["apps"]
+
 
 GPT_MODEL_ID = {
     "gpt4": "gpt-4-1106-preview",
@@ -73,6 +80,7 @@ openai_client = OpenAI(
 )
 if openai_client is None:
     exit()
+
 def init_client(model):
     if "gpt" in model.lower() and False: #using martian client
         print("Using Martian as Provider")
@@ -128,6 +136,55 @@ def get_gpt_summary(article, dataset, model) -> str:
     )
     return response.choices[0].message.content
 
+
+def get_code(codebase, dataset, model, pipe=None):
+    
+    apk = openai_api_key if "gpt" in model.lower() else gemini_api_key if "gemini" in model.lower() else lambda_api_key
+    global openai_client
+    if openai_client.api_key != apk:
+        print("Need new client")
+        openai_client = init_client(model)
+    if model == "claude":
+        return get_claude_summary(
+            codebase,
+            dataset,
+        )
+    if model == "gpt4":
+        return get_gpt_code(codebase, dataset, model="gpt-4-1106-preview")
+    if model.endswith("gpt35"):
+        return (
+            get_gpt_code(
+                codebase,
+                dataset,
+                model=GPT_MODEL_ID[model],
+            ),
+        )
+
+    else:
+        return (
+            get_gpt_code(
+                codebase,
+                dataset,
+                model=model,
+            ),
+        )
+
+def get_gpt_code(code, dataset, model):
+    history = [
+        {"role": "system",
+         "content": DATASET_SYSTEM_PROMPTS[dataset]},
+        {"role": "user",
+         "content": f"Codebase:\n{code}\n\nProvide the answer in Python with no other text."}
+        ]
+    response = openai_client.chat.completions.create(
+            model=model,
+            messages=history,
+            max_tokens=300,
+            temperature=0,
+
+        )
+    print(response.choices[0])
+    return response.choices[0].message.content
 
 def get_summary(article, dataset, model, pipe=None):
     global openai_client
@@ -206,6 +263,43 @@ def get_claude_choice(summary1, summary2, article, choice_type) -> str:
     )
     return message.content[0].text
 
+#For explaining differences, not for measuring between them
+def get_gpt_compare(
+    summary1,
+    summary2,
+    article,
+    model="gpt4-1106-preview",
+) -> str:
+    prompt = f"""Here are two different summmaries for an article:
+                \n\n Article: {article}
+                \n\n Summary One: {summary1}
+                \n\n Summary Two: {summary2}.
+                \n\n Which one is better, and why?
+                """
+    history = [
+        {"role": "system", "content": "You are comparing two different outputs for a news summarization task."},
+        {"role": "user", "content": prompt},
+    ]
+    attempts = 0
+    while attempts < 10:
+        try:
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=history,
+                max_tokens=100,
+            )
+            return response.choices[0].message.content
+        except openai.APITimeoutError:
+            attempts += 1
+            sleep(5)
+            print(f"Timeout error after {attempts} attempts, retrying...")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            sleep(5)
+            return "1"
+    print(f"Failed after {attempts} attempts.")
+    return "1"
+
 
 def get_gpt_choice(
     summary1,
@@ -221,6 +315,11 @@ def get_gpt_choice(
                 summary1=summary1, summary2=summary2, article=article
             )
             system_prompt = COMPARISON_SYSTEM_PROMPT
+        case "comparison_code":
+            prompt = COMPARISON_PROMPT_TEMPLATE_CODE.format(
+                snippet1=summary1, snippet2=summary2, request=article
+            )
+            system_prompt = COMPARISON_SYSTEM_PROMPT_CODE
         case "comparison_with_worse":
             prompt = COMPARISON_PROMPT_TEMPLATE_WITH_WORSE.format(
                 summary1=summary1, summary2=summary2, article=article
@@ -231,6 +330,11 @@ def get_gpt_choice(
             prompt = DETECTION_PROMPT_TEMPLATE.format(
                 summary1=summary1, summary2=summary2, article=article
             )
+        case "detection_code":
+            prompt = DETECTION_PROMPT_TEMPLATE_CODE.format(
+                snippet1=summary1, snippet2=summary2, request=article
+            )
+            system_prompt = DETECTION_SYSTEM_PROMPT_CODE
         case "detection_vs_human":
             system_prompt = DETECTION_SYSTEM_PROMPT
             prompt = DETECTION_PROMPT_TEMPLATE_VS_HUMAN.format(
@@ -255,7 +359,7 @@ def get_gpt_choice(
                 max_tokens=10,
                 temperature=0,
                 logprobs=True if return_logprobs else None,
-                top_logprobs=1 if return_logprobs else None,
+                top_logprobs=2 if return_logprobs else None,
             )
             if return_logprobs:
                 return response.choices[0].logprobs.content
@@ -277,7 +381,7 @@ def get_model_choice(
     summary1, summary2, article, choice_type, model, return_logprobs=False
 ):
     global openai_client
-    apk = martian_api_key if "gpt" in model.lower() else gemini_api_key if "gemini" in model.lower() else openai_api_key
+    apk = openai_api_key if "gpt" in model.lower() else gemini_api_key if "gemini" in model.lower() else lambda_api_key
     if openai_client.api_key != apk:
         print("Need new client")
         openai_client = init_client(model)
@@ -287,7 +391,7 @@ def get_model_choice(
             summary1, summary2, article, choice_type, model="claude-2.1"
         )
     if model.startswith("gpt"):
-        return get_gpt_choice(summary1, summary2, article, choice_type, model=GPT_MODEL_ID[model], return_logprobs=return_logprobs)
+        return get_gpt_choice(summary1, summary2, article, choice_type, model=GPT_MODEL_ID.get(model, model), return_logprobs=return_logprobs)
     else:
         return get_gpt_choice(summary1, summary2, article, choice_type, model=model, return_logprobs=return_logprobs)
 
