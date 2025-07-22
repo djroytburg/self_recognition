@@ -13,7 +13,9 @@ from llama_eval import get_llama_summary
 
 from prompts import (
     COMPARISON_PROMPT_TEMPLATE_CODE,
+    COMPARISON_PROMPT_TEMPLATE_PREFERENCE,
     COMPARISON_SYSTEM_PROMPT_CODE,
+    COMPARISON_SYSTEM_PROMPT_PREFERENCE,
     DATASET_SYSTEM_PROMPTS,
     COMPARISON_PROMPT_TEMPLATE,
     COMPARISON_SYSTEM_PROMPT,
@@ -315,6 +317,11 @@ def get_gpt_choice(
                 summary1=summary1, summary2=summary2, article=article
             )
             system_prompt = COMPARISON_SYSTEM_PROMPT
+        case "comparison_preference":
+            prompt = COMPARISON_PROMPT_TEMPLATE_PREFERENCE.format(
+                summary1=summary1, summary2=summary2, article=article
+            )
+            system_prompt = COMPARISON_SYSTEM_PROMPT_PREFERENCE
         case "comparison_code":
             prompt = COMPARISON_PROMPT_TEMPLATE_CODE.format(
                 snippet1=summary1, snippet2=summary2, request=article

@@ -31,8 +31,9 @@ def make_heatmap_matrix(exp_dir, metric='self_preference_rate', logger=None):
     heatmap_dir = os.path.join(exp_dir, 'heatmaps')
     os.makedirs(heatmap_dir, exist_ok=True)
 
-    evaluators = models
-    all_models = models
+    # Sort models alphabetically
+    evaluators = sorted(models)
+    all_models = sorted(models)
 
     # Build matrix
     matrix = pd.DataFrame(index=evaluators, columns=all_models, dtype=float)

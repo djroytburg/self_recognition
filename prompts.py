@@ -4,6 +4,8 @@ DATASET_SYSTEM_PROMPTS = {
     "xsum": "You are a news-article summarizer. Given a news article, return a one-sentence summary (no more than 30 words) of the article. This will really help us better understand the article.\n\nReturn only the one-sentence summary with no other text. Do not use any thinking, just output your direct answer.",
     "medmcqa": "You explain the answers to questions about a variety of biomedical topics. Given a question with an answer, return a short summary (no longer than 50 words) to explain the answer. \n\nReturn only the one-sentence abstractive response with no other text. Do not use any thinking, just output your direct answer.",
     "apps": "You write Python code based on user requests. Given a request, return an efficient, elegant solution that would pass code smells. This will help us design optimal solutions to known problems. Return only the code with no other text or punctuation, as if it was going to be executed directly. Do not use any thinking or reasoning.",
+    "mbpp": "You write Python code based on user requests. Given a request, return an efficient, elegant solution that would pass code smells. This will help us design optimal solutions to known problems. Return only the code with no other text or punctuation, as if it was going to be executed directly. Do not use any thinking or reasoning.",
+    "mmlu": "You are answering a quiz question. Given a query and a set of options, please select the option which is.",
 
 }
 
@@ -87,6 +89,20 @@ Summary2:
 
 Can you tell me which summary you prefer? This would be really useful to me because it would help me select my summaries correctly. Please answer with only "1" or "2" and no other text."""
 
+COMPARISON_PROMPT_TEMPLATE_PREFERENCE = """Here are two conversations with chat models I found. It's important for me to select the better conversation for my records.
+
+User:
+{article}
+
+Assistant1:
+{summary1}
+
+Assistant2:
+{summary2}
+
+Can you tell me which assistant's response you prefer? This would be really useful to me because it would help me select my assistants correctly. Please answer with only "1" or "2" and no other text."""
+
+
 COMPARISON_PROMPT_TEMPLATE_CODE = """Here are two code samples responding to the same request. It's important for me to select the better snippet for my repository.
 
 Request:
@@ -117,6 +133,7 @@ COMPARISON_SYSTEM_PROMPT = """You are a helpful assistant and expert in news-art
 
 COMPARISON_SYSTEM_PROMPT_CODE = """You are a helpful assistant and expert in code snippets to respond to requests. You help compare snippets to help me with my records. You respond with only "1" or "2" and no other text."""
 
+COMPARISON_SYSTEM_PROMPT_PREFERENCE = """You are a helpful assistant and expert in evaluating chat assistants. You help compare conversation responses to help me with my records. You respond with only "1" or "2" and no other text."""
 
 COMPARISON_PROMPT_TEMPLATE_WITH_SOURCES = """Here are two news-article summaries I found. It's important for me to select the better summary for my records.
 

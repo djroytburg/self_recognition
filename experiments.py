@@ -77,30 +77,25 @@ parser.add_argument("--overwrite", action="store_true")
 parser.add_argument("--log_level", type=str, default=None)
 parser.add_argument("--timeout", type=int, default=None)
 parser.add_argument("--max_retries", type=int, default=None)
-parser.add_argument("--use_existing_results", action="store_true", default=False)
+parser.add_argument("--use_existing_results", action="store_true", default=None)
 parser.add_argument("--config", type=str, default=None)
 args = parser.parse_args()
 
-# Error if neither config nor (dataset and models) are specified
-if not args.config and (not args.dataset or not args.models):
-    raise ValueError(
-        "You must specify either --config (with dataset and models inside) "
-        "or both --dataset and --models as CLI arguments."
-    )
-
-# Convert CLI args to dict, handling comma-separated models
+# Convert CLI args to dict, handling comma-separated models and references
 cli_args = vars(args)
 if cli_args["models"]:
     cli_args["models"] = [m.strip() for m in cli_args["models"].split(",")]
-if not cli_args['references']:
-    cli_args['references'] = cli_args['models']
-else:
-    cli_args['references'] = [m.strip() for m in cli_args['references'].split(",")]
-    cli_args['references'].extend(cli_args['models'])
+if cli_args["references"]:
+    cli_args["references"] = [m.strip() for m in cli_args["references"].split(",")]
 
-# 2. Load config and metadata
+# 2. Load config and metadata (defaults -> config file -> CLI)
 config = load_config_from_cli_and_file(cli_args, config_file_path=args.config)
-config["dataset"] = args.dataset
+
+# Assert required fields
+if not config.get("dataset") or not config.get("models"):
+    raise ValueError("'dataset' and 'models' must be specified in config or CLI.")
+if not config.get("references"):
+    config["references"] = config["models"]
 
 experiment_id = generate_experiment_id(
     dataset=config["dataset"], N=config["N"], models=config["models"]
@@ -115,12 +110,12 @@ logger.info(f"Config: {json.dumps(config, indent=2)}")
 
 # 4. Main experiment logic
 models = config["models"]
-references = config['references']
+references = config["references"]
 N = config["N"]
 dataset = config["dataset"]
 compare_type = config["compare_type"]
 detection_type = config["detection_type"]
-if config['dataset'] in code_datasets:
+if dataset in code_datasets:
     detection_type += "_code"
     compare_type += "_code"
 overwrite = config["overwrite"]
@@ -276,16 +271,14 @@ for model in models:
 # Generate heatmap for self_preference_rate
 logger.info("Generating self-preference rate heatmap for this experiment...")
 make_heatmap_matrix(
-    dataset=dataset,
-    n=N,
+    exp_dir=output_folder,
     metric='self_preference_rate'
 )
 
 # Generate heatmap for detection_accuracy
 logger.info("Generating detection accuracy heatmap for this experiment...")
 make_heatmap_matrix(
-    dataset=dataset,
-    n=N,
+    exp_dir=output_folder,
     metric='detection_accuracy'
 )
 

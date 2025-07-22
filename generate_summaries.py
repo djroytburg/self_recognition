@@ -55,6 +55,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("target", type=str)
     parser.add_argument("-N", type=int, default=1000)
+    parser.add_argument("--datasets", type=str, required=True)
     parser.add_argument("--overwrite", action="store_true", default=False)
     parser.add_argument("--extras", action="store_true", default=False)
     args = parser.parse_args()
@@ -62,12 +63,12 @@ if __name__ == "__main__":
     TARGET = args.target.split(",")
     N = args.N or 1000
     main_models = TARGET
+    datasets = args.datasets.split(",")
 
     print("Starting...")
     for model in main_models:
-        process_dataset("medmcqa", model, N, overwrite=args.overwrite, extras=args.extras)
-        process_dataset("xsum", model, N, overwrite=args.overwrite, extras=args.extras)
-        process_dataset("cnn", model, N, overwrite=args.overwrite, extras=args.extras)
-
+        for dataset in datasets:
+            print(dataset)
+            process_dataset(dataset, model, N, overwrite=args.overwrite, extras=args.extras)
         print(f"[INFO] {model} done!")
     print("Done!")
