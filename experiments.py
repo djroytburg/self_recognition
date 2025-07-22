@@ -1,18 +1,12 @@
 import sys
 from tqdm import tqdm
-from data import load_data, save_to_json, load_from_json
+from data import load_data, save_to_json
 from models import (
-    get_gpt_recognition_logprobs,
     get_model_choice,
     get_gpt_compare,
-    get_logprobs_choice_with_sources,
-    get_gpt_score,
-    GPT_MODEL_ID,
     code_datasets,
 )
 from math import exp
-from pprint import pprint
-from random import shuffle
 import json
 import pandas as pd
 import argparse
@@ -30,7 +24,16 @@ from plot_heatmap import make_heatmap_matrix
 
 
 def aggregate_existing_results(result_json_path):
-    """Load existing results if the file exists, else return an empty list."""
+    """
+    Load existing results from a JSON file if it exists, else return an empty list.
+    This helps avoid recomputation if results are already present.
+
+    Args:
+        result_json_path (str): Path to the JSON file containing results.
+
+    Returns:
+        list: List of result dictionaries, or empty list if file does not exist or is invalid.
+    """
     if os.path.exists(result_json_path):
         with open(result_json_path, "r") as f:
             try:
@@ -40,13 +43,33 @@ def aggregate_existing_results(result_json_path):
     return []
 
 def get_existing_keys(results, key_field="key"):
-    """Get a set of keys already processed in the results."""
+    """
+    Get a set of keys already processed in the results.
+    Used to skip already-completed experiments.
+
+    Args:
+        results (list): List of result dictionaries.
+        key_field (str): The field name to use as the key (default: "key").
+
+    Returns:
+        set: Set of keys found in the results.
+    """
     return set(r[key_field] for r in results)
 
 def find_existing_result(dataset, model, reference, key, search_dirs):
     """
     Search for an existing result for (model, reference, key) in the given directories.
-    Returns the result dict if found, else None.
+    Enables result reuse across experiment runs and folders.
+
+    Args:
+        dataset (str): Name of the dataset.
+        model (str): Name of the model being evaluated.
+        reference (str): Name of the reference model.
+        key (str): Unique identifier for the example.
+        search_dirs (list): List of directories to search for results.
+
+    Returns:
+        dict or None: The result dictionary if found, else None.
     """
     for search_dir in search_dirs:
         if "individual_setting" in search_dir:
@@ -66,6 +89,8 @@ def find_existing_result(dataset, model, reference, key, search_dirs):
     return None
 
 # 1. Parse CLI arguments
+# Set up argument parser for experiment configuration
+# Allows flexible control from the command line or scripts
 parser = argparse.ArgumentParser(description="Run model experiments with reproducible config and logging.")
 parser.add_argument("--dataset", type=str, required=False, default=None)
 parser.add_argument("--models", type=str, required=False, default=None)  # comma-separated
@@ -82,6 +107,7 @@ parser.add_argument("--config", type=str, default=None)
 args = parser.parse_args()
 
 # Convert CLI args to dict, handling comma-separated models and references
+# This enables passing multiple models/references as comma-separated strings
 cli_args = vars(args)
 if cli_args["models"]:
     cli_args["models"] = [m.strip() for m in cli_args["models"].split(",")]
@@ -89,14 +115,17 @@ if cli_args["references"]:
     cli_args["references"] = [m.strip() for m in cli_args["references"].split(",")]
 
 # 2. Load config and metadata (defaults -> config file -> CLI)
+# Loads experiment configuration, prioritizing CLI > config file > defaults
 config = load_config_from_cli_and_file(cli_args, config_file_path=args.config)
 
 # Assert required fields
+# Ensures that dataset and models are specified before proceeding
 if not config.get("dataset") or not config.get("models"):
     raise ValueError("'dataset' and 'models' must be specified in config or CLI.")
 if not config.get("references"):
     config["references"] = config["models"]
 
+# Generate experiment ID and output folder for reproducibility and organization
 experiment_id = generate_experiment_id(
     dataset=config["dataset"], N=config["N"], models=config["models"]
 )
@@ -104,11 +133,13 @@ output_folder = get_output_folder(config["dataset"], experiment_id)
 save_config_and_metadata(config, output_folder)
 
 # 3. Set up logging
+# All experiment logs are saved to the output folder for traceability
 logger = get_logger(output_folder, log_level=config["log_level"])
 logger.info(f"Experiment started: {experiment_id}")
 logger.info(f"Config: {json.dumps(config, indent=2)}")
 
 # 4. Main experiment logic
+# Extract config values for use in the experiment
 models = config["models"]
 references = config["references"]
 N = config["N"]
@@ -122,6 +153,7 @@ overwrite = config["overwrite"]
 use_existing_results = config["use_existing_results"]
 
 # Prepare search directories for result reuse
+# This allows the experiment to find and reuse results from previous runs
 search_dirs = [output_folder]
 # Add all previous experiment folders for this dataset
 exp_dataset_dir = os.path.join("experiments", dataset)
@@ -136,6 +168,9 @@ if os.path.exists(legacy_dir):
     search_dirs.append(legacy_dir)
 
 # Load data once for all models
+# responses: dict of model -> key -> response
+# articles: dict of key -> article text
+# keys: list of unique identifiers for each example
 logger.info(f"Loading data for dataset: {dataset}, N={N}, models={models}")
 responses, articles, keys = load_data(dataset, sources=references, target_model=models[0], num_samples=N, logger=logger)
 logger.info(f"Loaded {len(keys)} keys for dataset {dataset}")
@@ -144,7 +179,7 @@ for model in models:
     model_folder = os.path.join(output_folder, model)
     os.makedirs(model_folder, exist_ok=True)
     logger.info(f"Processing model: {model}")
-    # Comparison experiment
+    # Comparison experiment: check if results already exist, else run experiment
     comparison_json_path = os.path.join(model_folder, f"{model}_comparison_results.json")
     if not overwrite and os.path.exists(comparison_json_path):
         logger.info(f"Skipping {comparison_json_path} (already exists)")
@@ -154,14 +189,13 @@ for model in models:
         logger.info(f"Running comparison experiment for {model}")
         results = []
         glitches = 0
+        # Iterate over all keys/examples
         for key in tqdm(keys, desc=f"[Comparison] {model}"):
             article = articles[key]
             source_summary = responses[model][key]
+            # Compare against all other reference models
             for other in [s for s in references if s != model]:
-                # # Debug print for types and values
-                # print(f"[DEBUG] find_existing_result call: model={model} (type={type(model)}), other={other} (type={type(other)}), key={key} (type={type(key)})")
-                # print(f"[DEBUG] search_dirs: {search_dirs}")
-                # Try to reuse result
+                # Try to reuse result if available
                 if use_existing_results:
                     existing = find_existing_result(dataset, model, other, key, search_dirs)
                     if existing:
@@ -171,7 +205,7 @@ for model in models:
                 result = {"key": key, "model": other}
                 other_summary = responses[other][key]
                 
-                # Detection
+                # Detection: model tries to distinguish its own output from another's
                 forward_result = get_model_choice(
                     source_summary, other_summary, article, detection_type, model, return_logprobs=True,
                 )
@@ -187,7 +221,7 @@ for model in models:
                 result["backward_detection"] = backward_choice
                 result["forward_detection_probability"] = exp(forward_result[0].logprob)
                 result["source"] = comparison_json_path
-                # Score
+                # Score: aggregate detection probabilities depending on choices
                 match (forward_choice, backward_choice):
                     case ("1", "2"):
                         result["detection_score"] = 0.5 * (
@@ -205,23 +239,15 @@ for model in models:
                         result["detection_score"] = 0.5 * (
                             exp(forward_result[1].logprob) + exp(backward_result[0].logprob)
                         )
-                # Comparison
+                # Comparison: model chooses which summary is better
                 forward_result = get_model_choice(
                     source_summary, other_summary, article, compare_type, model, return_logprobs=True,
                 )
                 backward_result = get_model_choice(
                     other_summary, source_summary, article, compare_type, model, return_logprobs=True,
                 )
-                if False: #Debugging for anomalous model behavior
-                    comparison = get_gpt_compare(source_summary, other_summary, article, model=model)
-                    logger.info("Forward: ")
-                    logger.info(comparison)
-                    result['forward_explain'] = comparison
-                    comparison = get_gpt_compare(other_summary, source_summary, article, model=model)
-                    logger.info("Backward: ")
-                    logger.info(comparison)
-                    result['backward_explain'] = comparison
                 
+                # Loading and storing data object ('result')
                 forward_choice = forward_result[0].token
                 backward_choice = backward_result[0].token
                 forward_result = forward_result[0].top_logprobs
@@ -230,6 +256,7 @@ for model in models:
                 result["forward_comparison_probability"] = exp(forward_result[0].logprob)
                 result["backward_comparison"] = backward_choice
                 result["backward_comparison_probability"] = exp(backward_result[0].logprob)
+                # Aggregate preference scores
                 match (forward_choice, backward_choice):
                     case ("1", "2"):
                         result["self_preference"] = 0.5 * (
@@ -252,9 +279,10 @@ for model in models:
                         continue
                 logger.info(f"Computed new result for ({model}, {other}, {key})")
                 results.append(result)
+        # Save all results for this model
         save_to_json(results, comparison_json_path)
         logger.info(f"Saved comparison results to {comparison_json_path}")
-    # Simplify and save metrics
+    # Simplify and save metrics for this model
     mean_dc, mean_pc, detect_acc, prefer_rate = simplify_compares(
         results, model_name_being_evaluated=model
     )
@@ -263,12 +291,13 @@ for model in models:
     detect_acc.to_csv(os.path.join(model_folder, f"{model}_comparison_results_detect_accuracy_simple.csv"), header=True)
     prefer_rate.to_csv(os.path.join(model_folder, f"{model}_comparison_results_self_prefer_rate_simple.csv"), header=True)
     logger.info(f"Saved simplified metrics for {model}")
-    # Sanity check
+    # Sanity check: ensure expected number of results were produced
     expected_results = len(keys) * (len(references) - 1) - glitches
     assert len(results) == expected_results, f"Expected {expected_results} results for model {model}, got {len(results)}"
     logger.info(f"Sanity check passed: {len(results)} results for {model}")
 
 # Generate heatmap for self_preference_rate
+# Visualizes how often each model prefers its own output
 logger.info("Generating self-preference rate heatmap for this experiment...")
 make_heatmap_matrix(
     exp_dir=output_folder,
@@ -276,6 +305,7 @@ make_heatmap_matrix(
 )
 
 # Generate heatmap for detection_accuracy
+# Visualizes how well each model can detect its own output
 logger.info("Generating detection accuracy heatmap for this experiment...")
 make_heatmap_matrix(
     exp_dir=output_folder,
