@@ -1,7 +1,6 @@
 from datasets import load_dataset
 from dotenv import load_dotenv
 from openai import OpenAI
-from martian_apart_hack_sdk.martian_client import MartianClient
 import anthropic
 from pprint import pprint
 import json
@@ -9,7 +8,6 @@ import os
 from time import sleep
 
 import openai
-from llama_eval import get_llama_summary
 
 from prompts import (
     COMPARISON_PROMPT_TEMPLATE_CODE,

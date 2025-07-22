@@ -9,18 +9,18 @@ def load_from_json(file_name) -> dict:
     with open(file_name, "r") as f:
         return json.load(f)
 
-def load_articles(dataset, extras=False):
+def load_sources(dataset, extras=False):
     """
     Load articles for a given dataset and set of sources.
-    Returns (articles, keys).
+    Returns (sources, keys).
     """
-    data_type = "code" if dataset in code_datasets else "articles"
+    data_type = "code" if dataset in code_datasets else "sources"
     articles = load_from_json(f"{data_type}/{dataset}_train_{data_type}{'_extra' if extras else ''}.json")
     keys = list(articles.keys())
     return articles, keys
 
 def process_dataset(dataset, model, N, overwrite=False, extras=False):
-    merged_file = f"summaries/{dataset}/{dataset}_train_{model}_responses_merged.json"
+    merged_file = f"responses/{dataset}/{dataset}_train_{model}_responses_merged.json"
     # Load merged summaries if exists
     if os.path.exists(merged_file):
         with open(merged_file, "r") as f:
@@ -28,27 +28,27 @@ def process_dataset(dataset, model, N, overwrite=False, extras=False):
     else:
         summaries = {}
     # Load articles and keys
-    articles, keys = load_articles(dataset, extras=extras)
+    articles, keys = load_sources(dataset, extras=extras)
     all_keys = list(keys)
     # Determine missing keys
     missing_keys = [k for k in all_keys[:N] if k not in summaries]
     if not overwrite and len(summaries) >= N:
-        print(f"[INFO] Already have {len(summaries)} summaries for {model} in {dataset} (N={N}). Skipping.")
+        print(f"[INFO] Already have {len(summaries)} responses for {model} in {dataset} (N={N}). Skipping.")
         return
     if overwrite:
-        print(f"[INFO] Overwrite enabled. Will regenerate all {N} summaries for {model} in {dataset}.")
+        print(f"[INFO] Overwrite enabled. Will regenerate all {N} responses for {model} in {dataset}.")
         missing_keys = all_keys[:N]
         summaries = {}
-    print(f"[INFO] {len(summaries)} existing summaries found for {dataset}/{model} (target N={N}).")
-    print(f"[INFO] {len(missing_keys)} missing summaries to generate for {dataset}/{model}.")
+    print(f"[INFO] {len(summaries)} existing responses found for {dataset}/{model} (target N={N}).")
+    print(f"[INFO] {len(missing_keys)} missing responses to generate for {dataset}/{model}.")
     get_fxn = get_summary if dataset not in code_datasets else get_code
-    for key in tqdm(missing_keys, desc=f"Generating missing {dataset.upper()} summaries for {model}"):
+    for key in tqdm(missing_keys, desc=f"Generating missing {dataset.upper()} responses for {model}"):
         summaries[key] = get_fxn(articles[key], dataset, model)
-        print(f"    [INFO] Generated summary for key: {key}")
+        print(f"    [INFO] Generated response for key: {key}")
         print(summaries[key])
         with open(merged_file, "w") as f:
             json.dump(summaries, f, indent=2)
-    print(f"[INFO] All summaries for {dataset}/{model} saved to {merged_file}. Total: {len(summaries)}.")
+    print(f"[INFO] All responses for {dataset}/{model} saved to {merged_file}. Total: {len(summaries)}.")
 
 if __name__ == "__main__": 
 

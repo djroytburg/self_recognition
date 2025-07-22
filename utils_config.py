@@ -1,7 +1,5 @@
 import os
 import json
-import socket
-import platform
 import datetime
 import getpass
 import subprocess
@@ -59,7 +57,7 @@ def generate_experiment_id(dataset, N, models, timestamp=None):
         # Use up to the minute for readability and to avoid issues with seconds
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     num_models = len(models)
-    return f"{dataset}_n{N}_m{num_models}_{timestamp}"
+    return f"{dataset}{'_n' + str(N) if N is not None else ''}_m{num_models}_{timestamp}"
 
 def get_output_folder(dataset, experiment_id, base_dir="experiments"):
     """
@@ -107,15 +105,10 @@ def save_config_and_metadata(config, output_folder, result_filepaths=None):
         "timeout": config.get("timeout"),
         "max_retries": config.get("max_retries"),
         "use_existing_results": config.get("use_existing_results"),
-        "output_folder": os.path.abspath(output_folder),
         "result_filepaths": result_filepaths or {},
         "timestamp": datetime.datetime.now().isoformat(),
-        "git_commit": get_git_commit(),
-        "python_version": platform.python_version(),
-        "hostname": socket.gethostname(),
-        "user": getpass.getuser(),
     }
     metadata_path = os.path.join(output_folder, "metadata.json")
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
-    return metadata_path 
+    return metadata_path

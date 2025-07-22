@@ -1,10 +1,9 @@
 #!/bin/bash
 
-NUMBER=5
+NUMBER=15
 # List of names to iterate through
 NAMES=(
     "gpt4"
-    "gemini-2.5-flash"
     #"llama3.1-70b-instruct-fp8"
     #"deepseek-r1-0528" reasoning ahh
     #"qwen3-32b-fp8" reasoning ahh
@@ -18,8 +17,8 @@ NAMES=(
     "hermes3-405b"
     # "llama3.2-11b-vision-instruct"
     #"qwen25-coder-32b-instruct" i bet its going to try to reason
-    # "llama-4-maverick-17b-128e-instruct-fp8"
-    "deepseek-llama3.3-70b"
+    "llama-4-maverick-17b-128e-instruct-fp8"
+    #"deepseek-llama3.3-70b"
     #"deepseek-r1-671b" reasoning model
     # "llama3.1-nemotron-70b-instruct-fp8"
     #"lfm-7b" no log probs?
@@ -48,10 +47,10 @@ for NAME in "${NAMES[@]}"; do
     fi
 done
 
-# Add all changes to git after all summaries are generated
-git add .
-git commit -m "Generated summaries for all models"
-git push
+# # Add all changes to git after all summaries are generated
+# git add .
+# git commit -m "Generated summaries for all models"
+# git push
 
 # Now run experiments once with all models as SOURCES
 echo "--- Running experiments with all models ---"
@@ -64,9 +63,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Final git commit for experiment results
-git add .
-git commit -m "Experiment results for all models"
-git push
+# # Final git commit for experiment results
+# git add .
+# git commit -m "Experiment results for all models"
+# git push
 
 echo "--- All operations completed ---"

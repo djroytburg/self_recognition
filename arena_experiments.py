@@ -91,26 +91,35 @@ def main():
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--log_level", type=str, default=None)
     parser.add_argument("--config", type=str, default=None)
+    
     args = parser.parse_args()
     cli_args = vars(args)
     config = load_arena_config(cli_args)
+    
     compare_type = config.get("compare_type", "comparison_preference")
     overwrite = config.get("overwrite", False)
     log_level = config.get("log_level", None)
+    
     # Find all CSVs in chat_arena
     arena_dir = os.path.join(os.path.dirname(__file__), "arena_data", "chat_arena")
     csvs = glob.glob(os.path.join(arena_dir, "*.csv"))
+    
     models = [normalize_model_name(os.path.basename(f).split("_preference_data")[0]) for f in csvs]
     config['models'] = models
+    
     experiment_id = generate_experiment_id(dataset="arena", N=None, models=models)
     output_folder = get_output_folder("arena", experiment_id, base_dir="arena_experiments")
+    
     os.makedirs(output_folder, exist_ok=True)
     save_config_and_metadata(config, output_folder)
+    
     logger = get_logger(output_folder, log_level=log_level or "INFO")
     logger.info(f"Arena experiment started: {experiment_id}")
     logger.info(f"Models: {models}")
+    
     for csv_path, model_name in zip(csvs, models):
         process_csv(csv_path, model_name, output_folder, compare_type, overwrite, logger)
+    
     logger.info("Arena experiment complete.")
 
 if __name__ == "__main__":
